@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<?xml-stylesheet href="file:///usr/bin/../share/nmap/nmap.xsl" type="text/xsl"?>
+<!-- Nmap 7.99 scan initiated Wed Jul 15 14:10:01 2026 as: nmap -sT -sV -p 2222,8443 -&#45;script ssh-hostkey,ssl-cert -oX tests/fixtures/nmap/service.xml 127.0.0.1 -->
+<nmaprun scanner="nmap" args="nmap -sT -sV -p 2222,8443 -&#45;script ssh-hostkey,ssl-cert -oX tests/fixtures/nmap/service.xml 127.0.0.1" start="1784113801" startstr="Wed Jul 15 14:10:01 2026" version="7.99" xmloutputversion="1.05">
+<scaninfo type="connect" protocol="tcp" numservices="2" services="2222,8443"/>
+<verbose level="0"/>
+<debugging level="0"/>
+<hosthint><status state="up" reason="unknown-response" reason_ttl="0"/>
+<address addr="127.0.0.1" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+</hosthint>
+<host starttime="1784113801" endtime="1784113819"><status state="up" reason="conn-refused" reason_ttl="0"/>
+<address addr="127.0.0.1" addrtype="ipv4"/>
+<hostnames>
+<hostname name="localhost" type="PTR"/>
+</hostnames>
+<ports><port protocol="tcp" portid="2222"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="ssh" product="OpenSSH" version="10.2" extrainfo="protocol 2.0" method="probed" conf="10"><cpe>cpe:/a:openbsd:openssh:10.2</cpe></service></port>
+<port protocol="tcp" portid="8443"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="https-alt" product="kong/3.9.1" servicefp="SF-Port8443-TCP:V=7.99%T=SSL%I=7%D=7/15%Time=6A576A95%P=x86_64-pc-linux-gnu%r(GetRequest,197,&quot;HTTP/1\.1\x20401\x20Unauthorized\r\nDate:\x20Wed,\x2015\x20Jul\x202026\x2011:10:13\x20GMT\r\nContent-Type:\x20application/json;\x20charset=utf-8\r\nConnection:\x20close\r\nWWW-Authenticate:\x20Basic\x20realm=\&quot;service\&quot;\r\nContent-Length:\x2081\r\nAccess-Control-Allow-Origin:\x20\*\r\nX-Kong-Response-Latency:\x201\r\nServer:\x20kong/3\.9\.1\r\nX-Kong-Request-Id:\x202510c93cc2308f6b0c963d60b8be9920\r\n\r\n{\n\x20\x20\&quot;message\&quot;:\&quot;Unauthorized\&quot;,\n\x20\x20\&quot;request_id\&quot;:\&quot;2510c93cc2308f6b0c963d60b8be9920\&quot;\n}&quot;)%r(HTTPOptions,197,&quot;HTTP/1\.1\x20401\x20Unauthorized\r\nDate:\x20Wed,\x2015\x20Jul\x202026\x2011:10:13\x20GMT\r\nContent-Type:\x20application/json;\x20charset=utf-8\r\nConnection:\x20close\r\nWWW-Authenticate:\x20Basic\x20realm=\&quot;service\&quot;\r\nContent-Length:\x2081\r\nAccess-Control-Allow-Origin:\x20\*\r\nX-Kong-Response-Latency:\x201\r\nServer:\x20kong/3\.9\.1\r\nX-Kong-Request-Id:\x20dab4af0868c4f775695eae783ded3414\r\n\r\n{\n\x20\x20\&quot;message\&quot;:\&quot;Unauthorized\&quot;,\n\x20\x20\&quot;request_id\&quot;:\&quot;dab4af0868c4f775695eae783ded3414\&quot;\n}&quot;)%r(FourOhFourRequest,197,&quot;HTTP/1\.1\x20401\x20Unauthorized\r\nDate:\x20Wed,\x2015\x20Jul\x202026\x2011:10:13\x20GMT\r\nContent-Type:\x20application/json;\x20charset=utf-8\r\nConnection:\x20close\r\nWWW-Authenticate:\x20Basic\x20realm=\&quot;service\&quot;\r\nContent-Length:\x2081\r\nAccess-Control-Allow-Origin:\x20\*\r\nX-Kong-Response-Latency:\x201\r\nServer:\x20kong/3\.9\.1\r\nX-Kong-Request-Id:\x205d48401494798c14c9494c35a43ec828\r\n\r\n{\n\x20\x20\&quot;message\&quot;:\&quot;Unauthorized\&quot;,\n\x20\x20\&quot;request_id\&quot;:\&quot;5d48401494798c14c9494c35a43ec828\&quot;\n}&quot;)%r(RTSPRequest,12F,&quot;HTTP/1\.1\x20400\x20Bad\x20Request\r\nDate:\x20Wed,\x2015\x20Jul\x202026\x2011:10:18\x20GMT\r\nContent-Type:\x20text/plain;\x20charset=utf-8\r\nConnection:\x20close\r\nContent-Length:\x2057\r\nX-Kong-Response-Latency:\x203\r\nServer:\x20kong/3\.9\.1\r\nX-Kong-Request-Id:\x20f0fe5b286be6a60c477d71511adcf751\r\n\r\nBad\x20request\nrequest_id:\x20f0fe5b286be6a60c477d71511adcf751\n&quot;)%r(RPCCheck,12F,&quot;HTTP/1\.1\x20400\x20Bad\x20Request\r\nDate:\x20Wed,\x2015\x20Jul\x202026\x2011:10:18\x20GMT\r\nContent-Type:\x20text/plain;\x20charset=utf-8\r\nConnection:\x20close\r\nContent-Length:\x2057\r\nX-Kong-Response-Latency:\x202\r\nServer:\x20kong/3\.9\.1\r\nX-Kong-Request-Id:\x202059fb2678bc53563963a50b0a6b354f\r\n\r\nBad\x20request\nrequest_id:\x202059fb2678bc53563963a50b0a6b354f\n&quot;);" tunnel="ssl" method="probed" conf="10"/><script id="http-server-header" output="kong/3.9.1"><elem>kong/3.9.1</elem>
+</script><script id="ssl-cert" output="Subject: commonName=localhost/organizationName=Kong/stateOrProvinceName=California/countryName=US&#xa;Issuer: commonName=localhost/organizationName=Kong/stateOrProvinceName=California/countryName=US&#xa;Public Key type: ec&#xa;Public Key bits: 256&#xa;Signature Algorithm: ecdsa-with-SHA256&#xa;Not valid before: 2026-07-07T14:14:04&#xa;Not valid after:  2046-07-02T14:14:04&#xa;MD5:     1a0b c598 0a33 1223 2e42 ab8a f38c b0da&#xa;SHA-1:   3484 c872 93a4 7fb8 bc2a 8c41 badd 1779 5c3a 00bc&#xa;SHA-256: 0249 a13c 96ae 0324 d253 edba c560 72af c462 08cf 2c5e 06e2 90d8 b1ff 06e2 6c03"><table key="subject">
+<elem key="commonName">localhost</elem>
+<elem key="countryName">US</elem>
+<elem key="localityName">San Francisco</elem>
+<elem key="organizationName">Kong</elem>
+<elem key="organizationalUnitName">IT Department</elem>
+<elem key="stateOrProvinceName">California</elem>
+</table>
+<table key="issuer">
+<elem key="commonName">localhost</elem>
+<elem key="countryName">US</elem>
+<elem key="localityName">San Francisco</elem>
+<elem key="organizationName">Kong</elem>
+<elem key="organizationalUnitName">IT Department</elem>
+<elem key="stateOrProvinceName">California</elem>
+</table>
+<table key="pubkey">
+<elem key="type">ec</elem>
+<elem key="bits">256</elem>
+<table key="ecdhparams">
+<table key="curve_params">
+<elem key="ec_curve_type">namedcurve</elem>
+<elem key="curve">prime256v1</elem>
+</table>
+</table>
+</table>
+<table key="extensions">
+<table>
+<elem key="name">X509v3 Basic Constraints</elem>
+<elem key="value">CA:FALSE</elem>
+<elem key="critical">true</elem>
+</table>
+<table>
+<elem key="name">X509v3 Extended Key Usage</elem>
+<elem key="value">TLS Web Server Authentication, TLS Web Client Authentication</elem>
+</table>
+<table>
+<elem key="name">X509v3 Subject Key Identifier</elem>
+<elem key="value">34:1A:F8:95:92:FF:6C:1D:62:39:FD:69:CB:B0:42:A4:27:9C:70:C7</elem>
+</table>
+</table>
+<elem key="sig_algo">ecdsa-with-SHA256</elem>
+<table key="validity">
+<elem key="notBefore">2026-07-07T14:14:04</elem>
+<elem key="notAfter">2046-07-02T14:14:04</elem>
+</table>
+<elem key="md5">1a0bc5980a3312232e42ab8af38cb0da</elem>
+<elem key="sha1">3484c87293a47fb8bc2a8c41badd17795c3a00bc</elem>
+<elem key="sha256">0249a13c96ae0324d253edbac56072afc46208cf2c5e06e290d8b1ff06e26c03</elem>
+<elem key="pem">-&#45;&#45;&#45;&#45;BEGIN CERTIFICATE-&#45;&#45;&#45;&#45;&#xa;MIICNjCCAdygAwIBAgIQeG/jUojGNfJYV8J81icXvTAKBggqhkjOPQQDAjB1MQsw&#xa;CQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNU2FuIEZy&#xa;YW5jaXNjbzENMAsGA1UECgwES29uZzEWMBQGA1UECwwNSVQgRGVwYXJ0bWVudDES&#xa;MBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDcwNzE0MTQwNFoXDTQ2MDcwMjE0MTQw&#xa;NFowdTELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExFjAUBgNVBAcM&#xa;DVNhbiBGcmFuY2lzY28xDTALBgNVBAoMBEtvbmcxFjAUBgNVBAsMDUlUIERlcGFy&#xa;dG1lbnQxEjAQBgNVBAMMCWxvY2FsaG9zdDBZMBMGByqGSM49AgEGCCqGSM49AwEH&#xa;A0IABLz4AWP5dhiNtStj/ADBO+d6m8Y69vLbmkcP3CODVB77TZ11QS46xt4lFTQd&#xa;EoMZecL93jwViGvD+xtSw3wziVijTjBMMAwGA1UdEwEB/wQCMAAwHQYDVR0lBBYw&#xa;FAYIKwYBBQUHAwEGCCsGAQUFBwMCMB0GA1UdDgQWBBQ0GviVkv9sHWI5/WnLsEKk&#xa;J5xwxzAKBggqhkjOPQQDAgNIADBFAiEApbH2FWxVTB8PnyQeNh1NfHv/OXMBTat5&#xa;FAfdOL7YaMgCIEUNIumexvyt2r82ZY/oqjOgH/p3kYH4TqW1i1oOXoeI&#xa;-&#45;&#45;&#45;&#45;END CERTIFICATE-&#45;&#45;&#45;&#45;&#xa;</elem>
+</script><script id="fingerprint-strings" output="&#xa;  FourOhFourRequest: &#xa;    HTTP/1.1 401 Unauthorized&#xa;    Date: Wed, 15 Jul 2026 11:10:13 GMT&#xa;    Content-Type: application/json; charset=utf-8&#xa;    Connection: close&#xa;    WWW-Authenticate: Basic realm=&quot;service&quot;&#xa;    Content-Length: 81&#xa;    Access-Control-Allow-Origin: *&#xa;    X-Kong-Response-Latency: 1&#xa;    Server: kong/3.9.1&#xa;    X-Kong-Request-Id: 5d48401494798c14c9494c35a43ec828&#xa;    &quot;message&quot;:&quot;Unauthorized&quot;,&#xa;    &quot;request_id&quot;:&quot;5d48401494798c14c9494c35a43ec828&quot;&#xa;  GetRequest: &#xa;    HTTP/1.1 401 Unauthorized&#xa;    Date: Wed, 15 Jul 2026 11:10:13 GMT&#xa;    Content-Type: application/json; charset=utf-8&#xa;    Connection: close&#xa;    WWW-Authenticate: Basic realm=&quot;service&quot;&#xa;    Content-Length: 81&#xa;    Access-Control-Allow-Origin: *&#xa;    X-Kong-Response-Latency: 1&#xa;    Server: kong/3.9.1&#xa;    X-Kong-Request-Id: 2510c93cc2308f6b0c963d60b8be9920&#xa;    &quot;message&quot;:&quot;Unauthorized&quot;,&#xa;    &quot;request_id&quot;:&quot;2510c93cc2308f6b0c963d60b8be9920&quot;&#xa;  HTTPOptions: &#xa;    HTTP/1.1 401 Unauthorized&#xa;    Date: Wed, 15 Jul 2026 11:10:13 GMT&#xa;    Content-Type: application/json; charset=utf-8&#xa;    Connection: close&#xa;    WWW-Authenticate: Basic realm=&quot;service&quot;&#xa;    Content-Length: 81&#xa;    Access-Control-Allow-Origin: *&#xa;    X-Kong-Response-Latency: 1&#xa;    Server: kong/3.9.1&#xa;    X-Kong-Request-Id: dab4af0868c4f775695eae783ded3414&#xa;    &quot;message&quot;:&quot;Unauthorized&quot;,&#xa;    &quot;request_id&quot;:&quot;dab4af0868c4f775695eae783ded3414&quot;&#xa;  RPCCheck: &#xa;    HTTP/1.1 400 Bad Request&#xa;    Date: Wed, 15 Jul 2026 11:10:18 GMT&#xa;    Content-Type: text/plain; charset=utf-8&#xa;    Connection: close&#xa;    Content-Length: 57&#xa;    X-Kong-Response-Latency: 2&#xa;    Server: kong/3.9.1&#xa;    X-Kong-Request-Id: 2059fb2678bc53563963a50b0a6b354f&#xa;    request&#xa;    request_id: 2059fb2678bc53563963a50b0a6b354f&#xa;  RTSPRequest: &#xa;    HTTP/1.1 400 Bad Request&#xa;    Date: Wed, 15 Jul 2026 11:10:18 GMT&#xa;    Content-Type: text/plain; charset=utf-8&#xa;    Connection: close&#xa;    Content-Length: 57&#xa;    X-Kong-Response-Latency: 3&#xa;    Server: kong/3.9.1&#xa;    X-Kong-Request-Id: f0fe5b286be6a60c477d71511adcf751&#xa;    request&#xa;    request_id: f0fe5b286be6a60c477d71511adcf751"><elem key="FourOhFourRequest">&#xa;    HTTP/1.1 401 Unauthorized&#xa;    Date: Wed, 15 Jul 2026 11:10:13 GMT&#xa;    Content-Type: application/json; charset=utf-8&#xa;    Connection: close&#xa;    WWW-Authenticate: Basic realm=&quot;service&quot;&#xa;    Content-Length: 81&#xa;    Access-Control-Allow-Origin: *&#xa;    X-Kong-Response-Latency: 1&#xa;    Server: kong/3.9.1&#xa;    X-Kong-Request-Id: 5d48401494798c14c9494c35a43ec828&#xa;    &quot;message&quot;:&quot;Unauthorized&quot;,&#xa;    &quot;request_id&quot;:&quot;5d48401494798c14c9494c35a43ec828&quot;</elem>
+<elem key="GetRequest">&#xa;    HTTP/1.1 401 Unauthorized&#xa;    Date: Wed, 15 Jul 2026 11:10:13 GMT&#xa;    Content-Type: application/json; charset=utf-8&#xa;    Connection: close&#xa;    WWW-Authenticate: Basic realm=&quot;service&quot;&#xa;    Content-Length: 81&#xa;    Access-Control-Allow-Origin: *&#xa;    X-Kong-Response-Latency: 1&#xa;    Server: kong/3.9.1&#xa;    X-Kong-Request-Id: 2510c93cc2308f6b0c963d60b8be9920&#xa;    &quot;message&quot;:&quot;Unauthorized&quot;,&#xa;    &quot;request_id&quot;:&quot;2510c93cc2308f6b0c963d60b8be9920&quot;</elem>
+<elem key="HTTPOptions">&#xa;    HTTP/1.1 401 Unauthorized&#xa;    Date: Wed, 15 Jul 2026 11:10:13 GMT&#xa;    Content-Type: application/json; charset=utf-8&#xa;    Connection: close&#xa;    WWW-Authenticate: Basic realm=&quot;service&quot;&#xa;    Content-Length: 81&#xa;    Access-Control-Allow-Origin: *&#xa;    X-Kong-Response-Latency: 1&#xa;    Server: kong/3.9.1&#xa;    X-Kong-Request-Id: dab4af0868c4f775695eae783ded3414&#xa;    &quot;message&quot;:&quot;Unauthorized&quot;,&#xa;    &quot;request_id&quot;:&quot;dab4af0868c4f775695eae783ded3414&quot;</elem>
+<elem key="RPCCheck">&#xa;    HTTP/1.1 400 Bad Request&#xa;    Date: Wed, 15 Jul 2026 11:10:18 GMT&#xa;    Content-Type: text/plain; charset=utf-8&#xa;    Connection: close&#xa;    Content-Length: 57&#xa;    X-Kong-Response-Latency: 2&#xa;    Server: kong/3.9.1&#xa;    X-Kong-Request-Id: 2059fb2678bc53563963a50b0a6b354f&#xa;    request&#xa;    request_id: 2059fb2678bc53563963a50b0a6b354f</elem>
+<elem key="RTSPRequest">&#xa;    HTTP/1.1 400 Bad Request&#xa;    Date: Wed, 15 Jul 2026 11:10:18 GMT&#xa;    Content-Type: text/plain; charset=utf-8&#xa;    Connection: close&#xa;    Content-Length: 57&#xa;    X-Kong-Response-Latency: 3&#xa;    Server: kong/3.9.1&#xa;    X-Kong-Request-Id: f0fe5b286be6a60c477d71511adcf751&#xa;    request&#xa;    request_id: f0fe5b286be6a60c477d71511adcf751</elem>
+</script></port>
+</ports>
+<times srtt="28" rttvar="2819" to="100000"/>
+</host>
+<runstats><finished time="1784113819" timestr="Wed Jul 15 14:10:19 2026" summary="Nmap done at Wed Jul 15 14:10:19 2026; 1 IP address (1 host up) scanned in 17.46 seconds" elapsed="17.46" exit="success"/><hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

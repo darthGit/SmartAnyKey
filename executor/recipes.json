@@ -1,0 +1,61 @@
+{
+  "_comment": [
+    "Runtime recipes.",
+    "The harness is GENERIC: it does not know what python or node is — it only runs",
+    "what is written here. Add a runtime = an entry here + a toolchain in the Dockerfile;",
+    "add ANOTHER runner TYPE (ansible) = a separate image with its own recipes.json + a",
+    "row in the BFF registry (NUXT_TASK_RUNNERS). Zero changes to harness code.",
+    "",
+    "argv ARRAYS, not shell strings: deps content and file names come from an admin,",
+    "and sh -c would be a needless interpolation vector.",
+    "Placeholders: {env_dir} — cached environment dir, {work_dir} — per-job",
+    "dir, {entrypoint} — entry file, {deps_file} — dependency file in {env_dir}.",
+    "",
+    "prepare   — list of commands; run IN ORDER, the first failure fails the phase.",
+    "run       — run command when the environment is prepared (deps present).",
+    "runNoDeps — run command when deps are empty (environment not prepared).",
+    "links     — symlinks in {work_dir} (e.g. node_modules from the cache).",
+    "runEnv    — extra env variables for the run phase."
+  ],
+
+  "python312": {
+    "depsFile": "requirements.txt",
+    "lockFile": "constraints.txt",
+    "prepare": [
+      ["python3", "-m", "venv", "{env_dir}/venv"],
+      ["{env_dir}/venv/bin/pip", "install", "--no-cache-dir", "--disable-pip-version-check", "-r", "{deps_file}"]
+    ],
+    "run": ["{env_dir}/venv/bin/python", "-u", "{entrypoint}"],
+    "runNoDeps": ["python3", "-u", "{entrypoint}"],
+    "links": [],
+    "runEnv": { "PYTHONDONTWRITEBYTECODE": "1" }
+  },
+
+  "_bash_note": [
+    "bash has no package manager, so `prepare` is empty: the \"dependencies\" field",
+    "does nothing for this runtime (we cannot install apt packages from a task — the job",
+    "does not run as root, and what the image contains is the installation's call, not the task's).",
+    "A needed utility is either already in the image or belongs in a separate runner image."
+  ],
+  "bash": {
+    "depsFile": "deps.txt",
+    "lockFile": "deps.lock",
+    "prepare": [],
+    "run": ["bash", "{entrypoint}"],
+    "runNoDeps": ["bash", "{entrypoint}"],
+    "links": [],
+    "runEnv": {}
+  },
+
+  "node22": {
+    "depsFile": "package.json",
+    "lockFile": "pnpm-lock.yaml",
+    "prepare": [
+      ["pnpm", "install", "--prod", "--dir", "{env_dir}", "--config.confirmModulesPurge=false"]
+    ],
+    "run": ["node", "{entrypoint}"],
+    "runNoDeps": ["node", "{entrypoint}"],
+    "links": [["{env_dir}/node_modules", "node_modules"]],
+    "runEnv": { "NODE_PATH": "{env_dir}/node_modules" }
+  }
+}

@@ -1,0 +1,52 @@
+# Build-context filter.
+#
+# Why this was the first file of the task: the built image is a separate
+# observation channel that no git gate sees. Without this file the very first
+# `docker build` would pack the private AI layer (`ai/`, 82 files) and 23M of
+# `graphify-out/` into the image that ships to the customer.
+#
+# Ceiling, stated out loud: this file cuts the build context, not an already
+# built image. Proof of absence is a check of the image contents
+# (`docker export <c> | tar t | grep -cE '(^|/)ai/'` → 0), not this list.
+
+# --- private AI layer (our IP) ---
+ai/
+.claude/
+CLAUDE.md
+README_ai.md
+README_ai.md.*
+setup/
+graphify-out/
+scripts/rule5-nudge.sh
+# publication tooling — its patterns name the private layer; scripts/ is copied whole
+scripts/private/
+tests/private/
+
+# --- secrets: never in the image ---
+.env
+.env.*
+docker/
+
+# --- local state and build artifacts (the image builds its own) ---
+node_modules
+.nuxt
+.output
+.git
+.gitignore
+.gitattributes
+.nuxtrc
+.playwright-mcp/
+*.log
+
+# --- tests: not needed at runtime (`test:ci` runs in CI, not in the image) ---
+tests/
+vitest.config.ts
+
+# --- working-tree litter ---
+/*.png
+.DS_Store
+
+# Warning: `scripts/` and `supabase/` are NOT excluded — they must be in the image.
+# Ops without a host Node depends on them
+# (`docker compose run --rm app node scripts/db-migrate.mjs`), i.e. a customer
+# without sources applies migrations and seeds with the same application image.

@@ -1,0 +1,27 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # Minutes are billed on private repositories; the private origin runs these
+    # checks locally before every PR, the public mirror runs them here.
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The pnpm version has one home — the Dockerfile; read it from there.
+      - run: npm install -g "pnpm@$(sed -n 's/.*npm install -g pnpm@\([0-9.]*\).*/\1/p' Dockerfile)"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm check:i18n
+      - run: pnpm test:ci

@@ -1,0 +1,166 @@
+# Dev overlay (the "build from sources" path).
+#
+# Everything a customer installation should not even see: a local `build:`,
+# publishing internal ports to the host, and three fake devices.
+#
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml \
+#     --env-file docker/.env up -d
+#
+# Two development modes, which is why `app` is behind a profile here:
+#   • host-dev (typical): `pnpm dev` on the host + infra in compose. The command above
+#     brings up infra and dev targets, but NOT the `app` container (otherwise it
+#     would compete with `pnpm dev` for port 3000).
+#   • in-compose (needed for end-to-end and image-ops checks): add `--profile app` — then
+#     the app builds locally and runs in the compose network, i.e. sees
+#     `dev-vnc`/`dev-rdp`/`testbox` via compose DNS, as in prod.
+services:
+
+  app:
+    profiles: [app]
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    # Deterministic local tag — so the overlay does not pull the image from the registry.
+    image: ghcr.io/darthgit/smartanykey-app:local
+
+  executor:
+    build:
+      context: ../executor
+    image: ghcr.io/darthgit/smartanykey-executor:local
+    # Port on the host — for the host-dev BFF (`pnpm dev` is not in the compose network).
+    ports:
+      - "8090:8090"
+
+  guacd:
+    # Same: the host-dev BFF bridges browser↔guacd from the host (ADR-010).
+    ports:
+      - "4822:4822"
+
+  db:
+    # Direct Postgres for ops from the host (`node scripts/db-migrate.mjs`).
+    # Why a separate port, not 5432: host 5432 and 6543 are held by **supavisor**, and
+    # `db` published nothing outside. Through the pooler psql does not even connect
+    # (`FATAL: no tenant identifier provided` — needs user `postgres.<tenant>`
+    # or SNI), and pg_dump/pg_restore through the pooler is a separate class of problems that
+    # the whole backup rests on (phase C). Hence the dev path = a direct port.
+    # In prod this port does not exist and is not needed: ops run inside the compose network
+    # (`docker compose run --rm app node scripts/…`, PGHOST=db).
+    ports:
+      - "${SAK_DB_PORT:-5433}:5432"
+
+  # ---------------------------------------------------------------------------
+  # DB admin (Supabase Studio + its pg-meta API). Dev only: the customer's compose
+  # does not carry them (ADR-023).
+  # ---------------------------------------------------------------------------
+
+  studio:
+    image: supabase/studio:2026.06.03-sha-0bca601
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://localhost:3000/api/platform/profile').then((r) => {if (r.status !== 200) throw new Error(r.status)})\""
+        ]
+      timeout: 10s
+      interval: 5s
+      retries: 3
+      start_period: 20s
+    environment:
+      # Listen on all IPv4 interfaces
+      HOSTNAME: "0.0.0.0"
+
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      # See: https://supabase.com/docs/guides/self-hosting/remove-superuser-access
+      POSTGRES_USER_READ_WRITE: postgres
+
+      PG_META_CRYPTO_KEY: ${PG_META_CRYPTO_KEY}
+      PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS}
+      PGRST_DB_MAX_ROWS: ${PGRST_DB_MAX_ROWS:-1000}
+      PGRST_DB_EXTRA_SEARCH_PATH: ${PGRST_DB_EXTRA_SEARCH_PATH:-public}
+
+      DEFAULT_ORGANIZATION_NAME: ${STUDIO_DEFAULT_ORGANIZATION}
+      DEFAULT_PROJECT_NAME: ${STUDIO_DEFAULT_PROJECT}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      AUTH_JWT_SECRET: ${JWT_SECRET}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY}
+
+      # See: docker-compose.logs.yml
+      ENABLED_FEATURES_LOGS_ALL: "false"
+
+      SNIPPETS_MANAGEMENT_FOLDER: /app/snippets
+    volumes:
+      - studio-snippets:/app/snippets
+    # Loopback only: a full DB admin without auth, for the developer's own machine.
+    ports:
+      - "127.0.0.1:${STUDIO_PORT:-54323}:3000"
+
+  meta:
+    image: supabase/postgres-meta:v0.96.6
+    restart: unless-stopped
+    depends_on:
+      db:
+        # Disable this if you are using an external Postgres database
+        condition: service_healthy
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: ${POSTGRES_HOST}
+      PG_META_DB_PORT: ${POSTGRES_PORT}
+      PG_META_DB_NAME: ${POSTGRES_DB}
+      PG_META_DB_USER: postgres
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      CRYPTO_KEY: ${PG_META_CRYPTO_KEY}
+
+  # ---------------------------------------------------------------------------
+  # Dev targets: fake devices for end-to-end connection checks.
+  # The hosts the app sees depend on where it runs —
+  # `DEV_TESTBOX_HOST` in the seeder (`127.0.0.1` for host-dev, `testbox` for
+  # in-compose). Without it the SSH terminal in compose mode silently fails to connect.
+  # ---------------------------------------------------------------------------
+
+  testbox:
+    image: lscr.io/linuxserver/openssh-server:latest
+    restart: unless-stopped
+    # Published, because the host-dev BFF goes to 127.0.0.1:2222 — the name `testbox`
+    # does not resolve from the host.
+    ports:
+      - "2222:2222"
+    environment:
+      USER_NAME: smartanykey
+      USER_PASSWORD: testbox-secret-pass
+      PASSWORD_ACCESS: "true"
+
+  # VNC target (ADR-010). The port is NOT published: guacd (in compose) talks to it,
+  # not the BFF. TigerVNC truncates the password to 8 chars → effectively `testbox-`.
+  dev-vnc:
+    image: accetto/ubuntu-vnc-xfce-g3:latest
+    restart: unless-stopped
+    shm_size: 512m
+    environment:
+      VNC_PW: testbox-secret-pass
+      VNC_RESOLUTION: 1280x720
+
+  # RDP target (ADR-010). Login is the system user `abc` (linuxserver), the password
+  # is set by `scripts/seed-dev-targets.mjs`.
+  dev-rdp:
+    image: lscr.io/linuxserver/rdesktop:ubuntu-xfce
+    restart: unless-stopped
+    shm_size: 512m
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: Europe/Kyiv
+
+volumes:
+  studio-snippets:

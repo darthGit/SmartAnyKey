@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<?xml-stylesheet href="file:///usr/bin/../share/nmap/nmap.xsl" type="text/xsl"?>
+<!-- Nmap 7.99 scan initiated Fri Aug 14 10:19:59 2026 as: nmap -sT -sV -T3 -p 139,445 -&#45;script smb-os-discovery -oX smb.xml 172.17.0.2 -->
+<nmaprun scanner="nmap" args="nmap -sT -sV -T3 -p 139,445 -&#45;script smb-os-discovery -oX smb.xml 172.17.0.2" start="1786691999" startstr="Fri Aug 14 10:19:59 2026" version="7.99" xmloutputversion="1.05">
+<scaninfo type="connect" protocol="tcp" numservices="2" services="139,445"/>
+<verbose level="0"/>
+<debugging level="0"/>
+<hosthint><status state="up" reason="unknown-response" reason_ttl="0"/>
+<address addr="172.17.0.2" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+</hosthint>
+<host starttime="1786691999" endtime="1786692010"><status state="up" reason="conn-refused" reason_ttl="0"/>
+<address addr="172.17.0.2" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+<ports><port protocol="tcp" portid="139"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="netbios-ssn" product="Samba smbd" version="3.X - 4.X" extrainfo="workgroup: SAKLAB" hostname="SAK-FIXTURE" method="probed" conf="10"><cpe>cpe:/a:samba:samba</cpe></service></port>
+<port protocol="tcp" portid="445"><state state="open" reason="syn-ack" reason_ttl="0"/><service name="netbios-ssn" product="Samba smbd" version="4.22.10" extrainfo="workgroup: SAKLAB" hostname="SAK-FIXTURE" method="probed" conf="10"><cpe>cpe:/a:samba:samba</cpe></service></port>
+</ports>
+<hostscript><script id="smb-os-discovery" output="&#xa;  OS: Windows 6.1 (Samba 4.22.10)&#xa;  Computer name: 471c747456e6&#xa;  NetBIOS computer name: SAK-FIXTURE\x00&#xa;  Domain name: &#xa;  FQDN: 471c747456e6&#xa;  System time: 2026-08-14T07:20:10+00:00&#xa;"><elem key="os">Windows 6.1</elem>
+<elem key="lanmanager">Samba 4.22.10</elem>
+<elem key="server">SAK-FIXTURE\x00</elem>
+<elem key="date">2026-08-14T07:20:10+00:00</elem>
+<elem key="fqdn">471c747456e6</elem>
+<elem key="domain_dns"></elem>
+<elem key="workgroup">SAKLAB\x00</elem>
+</script></hostscript><times srtt="33" rttvar="2828" to="100000"/>
+</host>
+<runstats><finished time="1786692010" timestr="Fri Aug 14 10:20:10 2026" summary="Nmap done at Fri Aug 14 10:20:10 2026; 1 IP address (1 host up) scanned in 11.72 seconds" elapsed="11.72" exit="success"/><hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

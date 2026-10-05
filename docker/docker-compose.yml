@@ -1,0 +1,537 @@
+# SmartAnyKey local/self-host infrastructure — one-click stack.
+#
+# Vendored from the official Supabase self-host setup:
+#   https://github.com/supabase/supabase/tree/master/docker
+#   commit a84fd10a4feb7852bddfe6a9e8402eb098dadfc1 (taken 2026-07-07)
+# Trimmed to what the product uses (ADR-023: how to restore a service, how to update
+# from upstream). SmartAnyKey additions: guacd, app, executor at the bottom.
+#
+# Deviations from upstream:
+#   - container_name lines removed: fixed names collide with any other supabase
+#     compose on the same host; the project prefix is enough.
+#   - studio, meta → docker-compose.dev.yml (loopback port, no Kong route); with them
+#     the Kong `dashboard`/`meta`/`mcp` routes, the DASHBOARD consumer, basic-auth.
+#   - functions removed: volumes/functions, the `deno-cache` volume, FUNCTIONS_VERIFY_JWT,
+#     the Kong `functions-v1` route.
+#   - imgproxy removed: storage runs with ENABLE_IMAGE_TRANSFORMATION=false, no
+#     IMGPROXY_URL; IMGPROXY_AUTO_WEBP.
+#   - supavisor removed: it published Postgres on the host (5432/6543); with it
+#     volumes/pooler, db init `pooler.sql`, POOLER_*, VAULT_ENC_KEY.
+#   - analytics/vector, MinIO, Caddy/nginx/envoy proxies were never started here; their
+#     files and env (`logs.sql`, `_supabase.sql`, LOGFLARE_*, MINIO_*, PROXY_DOMAIN, …) removed.
+#   - Kong keeps 4 routes (auth, rest, realtime ws, storage); open auth routes, GraphQL,
+#     OpenAPI and realtime REST removed; KONG_PLUGINS lists only the plugins in use.
+#   - commented-out GoTrue blocks (OAuth, SMS, MFA, SAML, hooks) removed.
+#   - mounted configs live in ./config (upstream ./volumes); PGDATA and Storage files
+#     are named volumes (db-data, storage-data), not directories inside docker/.
+#
+# Usage (two install paths)
+#   Prod / customer (images from the registry, no sources):
+#     docker compose -f docker/docker-compose.yml --env-file docker/.env up -d
+#   Development (local build + dev targets) — add the overlay:
+#     docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml \
+#       --env-file docker/.env up -d
+#   Stop: the same command with `down`.
+#
+# This file contains neither `build:` nor dev targets — all of that is in
+# `docker-compose.dev.yml`, because the customer gets only this file and `.env`.
+#
+# Notes:
+#   - Nested variable interpolation (${A:-${B}}) requires podman-compose >= 1.6.0
+#
+
+name: smartanykey
+
+services:
+
+  kong:
+    image: kong/kong:3.9.1
+    restart: unless-stopped
+    networks:
+      default:
+        aliases:
+          - api-gw
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - ${KONG_HTTP_PORT}:8000/tcp
+      - ${KONG_HTTPS_PORT}:8443/tcp
+    volumes:
+      - ./config/api/kong.yml:/home/kong/temp.yml:ro,z
+      - ./config/api/kong-entrypoint.sh:/home/kong/kong-entrypoint.sh:ro,z
+      #- ./config/api/server.crt:/home/kong/server.crt:ro
+      #- ./config/api/server.key:/home/kong/server.key:ro
+    environment:
+      # Default `auto` = one nginx worker per core: 18 workers, 866 MiB on an 18-core
+      # host (measured 2026-10-05, DinD). 1/2/4 workers = 74/121/213 MiB. Two keeps a
+      # request served while another worker is busy; raise it for a large site.
+      KONG_NGINX_WORKER_PROCESSES: ${KONG_NGINX_WORKER_PROCESSES:-2}
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /usr/local/kong/kong.yml
+      KONG_ROUTER_FLAVOR: expressions
+      # https://github.com/supabase/cli/issues/14
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_DNS_NOT_FOUND_TTL: 1
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl,post-function,rate-limiting
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+      KONG_PROXY_ACCESS_LOG: /dev/stdout combined
+      #KONG_SSL_CERT: /home/kong/server.crt
+      #KONG_SSL_CERT_KEY: /home/kong/server.key
+      # Sign-in attempts (password grant + refresh) per client IP per minute (kong.yml).
+      SAK_LOGIN_RATE_PER_MIN: ${SAK_LOGIN_RATE_PER_MIN:-10}
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:-}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
+      ANON_KEY_ASYMMETRIC: ${ANON_KEY_ASYMMETRIC:-}
+      SERVICE_ROLE_KEY_ASYMMETRIC: ${SERVICE_ROLE_KEY_ASYMMETRIC:-}
+    entrypoint: ["/bin/sh", "/home/kong/kong-entrypoint.sh"]
+
+  auth:
+    image: supabase/gotrue:v2.189.0
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:9999/health"
+        ]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    depends_on:
+      db:
+        # Disable this if you are using an external Postgres database
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${API_EXTERNAL_URL}
+
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+
+      GOTRUE_SITE_URL: ${SITE_URL}
+      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS}
+      # The product has no self-signup: users are created by an admin (admin API is not
+      # affected). Fixed, not from .env: an old .env with `false` let anyone holding the
+      # public anon key register — phone + autoconfirm returned a live session.
+      GOTRUE_DISABLE_SIGNUP: "true"
+
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: ${JWT_EXPIRY}
+
+      # Legacy symmetric HS256 key
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+
+      # JSON array of signing JWKs (EC private + legacy symmetric)
+      # For Podman, use: GOTRUE_JWT_KEYS: ${JWT_KEYS}
+      #GOTRUE_JWT_KEYS: ${JWT_KEYS:-[]}
+
+      GOTRUE_JWT_ISSUER: ${API_EXTERNAL_URL}
+
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: ${ENABLE_EMAIL_SIGNUP}
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: ${ENABLE_ANONYMOUS_USERS}
+      GOTRUE_MAILER_AUTOCONFIRM: ${ENABLE_EMAIL_AUTOCONFIRM}
+
+      # Uncomment to bypass nonce check in ID Token flow. Commonly set to true when using Google Sign In on mobile.
+      # GOTRUE_EXTERNAL_SKIP_NONCE_CHECK: "true"
+
+      # GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: "true"
+      # GOTRUE_SMTP_MAX_FREQUENCY: 1s
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL}
+      GOTRUE_SMTP_HOST: ${SMTP_HOST}
+      GOTRUE_SMTP_PORT: ${SMTP_PORT}
+      GOTRUE_SMTP_USER: ${SMTP_USER}
+      GOTRUE_SMTP_PASS: ${SMTP_PASS}
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME}
+      GOTRUE_MAILER_URLPATHS_INVITE: ${MAILER_URLPATHS_INVITE}
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: ${MAILER_URLPATHS_CONFIRMATION}
+      GOTRUE_MAILER_URLPATHS_RECOVERY: ${MAILER_URLPATHS_RECOVERY}
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: ${MAILER_URLPATHS_EMAIL_CHANGE}
+
+      GOTRUE_EXTERNAL_PHONE_ENABLED: ${ENABLE_PHONE_SIGNUP}
+      GOTRUE_SMS_AUTOCONFIRM: ${ENABLE_PHONE_AUTOCONFIRM}
+
+  rest:
+    image: postgrest/postgrest:v14.12
+    restart: unless-stopped
+    depends_on:
+      db:
+        # Disable this if you are using an external Postgres database
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "postgrest", "--ready" ]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS}
+      PGRST_DB_MAX_ROWS: ${PGRST_DB_MAX_ROWS:-1000}
+      PGRST_DB_EXTRA_SEARCH_PATH: ${PGRST_DB_EXTRA_SEARCH_PATH:-public}
+      PGRST_DB_ANON_ROLE: anon
+
+      PGRST_ADMIN_SERVER_PORT: 3001
+      PGRST_ADMIN_SERVER_HOST: localhost
+
+      # PostgREST accepts a plain-text symmetric secret, a single JWK, or a JWKS.
+      # For Podman, use either PGRST_JWT_SECRET: ${JWT_SECRET} or
+      # PGRST_JWT_SECRET: ${JWT_JWKS}
+      PGRST_JWT_SECRET: ${JWT_JWKS:-${JWT_SECRET}}
+
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
+      PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY}
+    command:
+      [
+        "postgrest"
+      ]
+
+  realtime:
+    image: supabase/realtime:v2.102.3
+    restart: unless-stopped
+    # Kong routes to this hostname, and realtime parses its tenant id from the
+    # first label ("realtime-dev"). Upstream gets it from container_name, which
+    # this file drops (fixed names collide) — a network alias keeps the name
+    # without the collision.
+    networks:
+      default:
+        aliases:
+          - realtime-dev.supabase-realtime
+    depends_on:
+      db:
+        # Disable this if you are using an external Postgres database
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sSfL --head -o /dev/null -H \"Authorization: Bearer ${ANON_KEY}\" http://localhost:4000/api/tenants/realtime-dev/health"
+        ]
+      timeout: 5s
+      interval: 30s
+      retries: 3
+      start_period: 10s
+    environment:
+      PORT: 4000
+      DB_HOST: ${POSTGRES_HOST}
+      DB_PORT: ${POSTGRES_PORT}
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+      DB_AFTER_CONNECT_QUERY: 'SET search_path TO _realtime'
+      DB_ENC_KEY: ${REALTIME_DB_ENC_KEY:-supabaserealtime}
+
+      # Legacy symmetric HS256 key
+      API_JWT_SECRET: ${JWT_SECRET}
+
+      # JWKS for token verification (EC public + legacy symmetric).
+      # For Podman, use: API_JWT_JWKS: ${JWT_JWKS}
+      #API_JWT_JWKS: ${JWT_JWKS:-{"keys":[]}}
+
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      METRICS_JWT_SECRET: ${JWT_SECRET}
+      ERL_AFLAGS: -proto_dist inet_tcp
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: "10000"
+      APP_NAME: realtime
+      SEED_SELF_HOST: "true"
+      RUN_JANITOR: "true"
+      DISABLE_HEALTHCHECK_LOGGING: "true"
+
+  # To use S3 backed storage: docker compose -f docker-compose.yml -f docker-compose.s3.yml up
+  storage:
+    image: supabase/storage-api:v1.60.4
+    restart: unless-stopped
+    depends_on:
+      db:
+        # Disable this if you are using an external Postgres database
+        condition: service_healthy
+      rest:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://storage:5000/status"
+        ]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+      start_period: 10s
+    environment:
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      POSTGREST_URL: http://rest:3000
+
+      # Legacy symmetric HS256 key
+      AUTH_JWT_SECRET: ${JWT_SECRET}
+
+      # JWKS for token verification (EC public + legacy symmetric).
+      # For Podman, use: JWT_JWKS: ${JWT_JWKS}
+      #JWT_JWKS: ${JWT_JWKS:-{"keys":[]}}
+
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      STORAGE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
+      REQUEST_ALLOW_X_FORWARDED_PATH: "true"
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      # S3 bucket when using S3 backend, directory name when using 'file'
+      GLOBAL_S3_BUCKET: ${GLOBAL_S3_BUCKET}
+      # S3 Backend configuration
+      #GLOBAL_S3_ENDPOINT: https://your-s3-endpoint
+      #GLOBAL_S3_PROTOCOL: https
+      #GLOBAL_S3_FORCE_PATH_STYLE: "true"
+      #AWS_ACCESS_KEY_ID: your-access-key-id
+      #AWS_SECRET_ACCESS_KEY: your-secret-access-key
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: ${STORAGE_TENANT_ID}
+      # TODO: https://github.com/supabase/storage-api/issues/55
+      REGION: ${REGION}
+      # No image transformations in the product (imgproxy dropped, see header).
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+      # S3 protocol endpoint configuration
+      S3_PROTOCOL_ACCESS_KEY_ID: ${S3_PROTOCOL_ACCESS_KEY_ID}
+      S3_PROTOCOL_ACCESS_KEY_SECRET: ${S3_PROTOCOL_ACCESS_KEY_SECRET}
+    volumes:
+      - storage-data:/var/lib/storage
+
+  # Comment out everything below this point if you are using an external Postgres database
+  db:
+    # To upgrade an existing Postgres 15 database in place, see utils/upgrade-pg17.sh.
+    image: supabase/postgres:17.6.1.136
+    restart: unless-stopped
+    volumes:
+      - ./config/db/realtime.sql:/docker-entrypoint-initdb.d/migrations/99-realtime.sql:Z
+      # Must be superuser to create event trigger
+      - ./config/db/webhooks.sql:/docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql:Z
+      # Must be superuser to alter reserved role
+      - ./config/db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:Z
+      # Initialize the database settings with JWT_SECRET and JWT_EXP
+      - ./config/db/jwt.sql:/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql:Z
+      # PGDATA in a named volume, not in the tree: survives replacing the docker/ directory.
+      - db-data:/var/lib/postgresql/data
+      # Use named volume to persist pgsodium decryption key between restarts
+      - db-config:/etc/postgresql-custom
+    healthcheck:
+      test:
+        [
+        "CMD",
+        "pg_isready",
+        "-U",
+        "postgres",
+        "-h",
+        "localhost"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      PGPORT: ${POSTGRES_PORT}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      POSTGRES_DB: ${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXP: ${JWT_EXPIRY}
+    command:
+      [
+        "postgres",
+        "-c",
+        "config_file=/etc/postgresql/postgresql.conf",
+        "-c",
+        "log_min_messages=fatal" # prevents Realtime polling queries from appearing in logs
+      ]
+
+  # ---------------------------------------------------------------------------
+  # SmartAnyKey: remote-access engine (ADR 003 — stateless Guacamole,
+  # json-auth minted by the BFF, no JDBC database).
+  # Dev targets (testbox / dev-vnc / dev-rdp) moved to
+  # `docker-compose.dev.yml` — a customer installation should not even know about them.
+
+  guacd:
+    image: guacamole/guacd:1.6.0
+    restart: unless-stopped
+    # The image's own check runs every 5m, so `app` (depends on it healthy) and
+    # `install.sh` (`up --wait`) sat idle for five minutes. Same check, sooner.
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 4822 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # ADR-010: the BFF bridges browser↔guacd directly. In prod `app` reaches
+    # `guacd:4822` over the compose network, so the port is NOT published. Publishing for
+    # host-dev (`pnpm dev` on the host) is added by `docker-compose.dev.yml`.
+
+  # ADR-010: the guac web app (guacamole/guacamole) + json-auth are removed —
+  # the BFF bridges browser↔guacd directly. Only guacd (the engine) remains.
+
+  # ---------------------------------------------------------------------------
+  # SmartAnyKey: the app itself — SPA (ssr:false) + Nitro BFF in one process
+  # (ADR-001). Originally this service was not here at all: the stack
+  # brought up infrastructure without the app.
+  #
+  # ⚠ Exactly one replica. The scheduler lives inside the app process
+  # (`nitro.experimental.tasks`, ADR-015) → a second replica means every cron
+  # fires twice. Horizontal scaling = a separate task (leader election or
+  # an external tick), not `--scale app=2`.
+  # ---------------------------------------------------------------------------
+  app:
+    image: ${SAK_IMAGE:-ghcr.io/darthgit/smartanykey-app}:${SAK_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      # kong — specifically `service_healthy`: on `service_started` the app starts
+      # before kong accepts requests, and the boot task `reapStale` fails with
+      # `DB: TypeError: fetch failed` (observed 2026-09-04 on the first
+      # in-compose run). The error is harmless, but it is in the log of every start.
+      kong:
+        condition: service_healthy
+      # ⚠ storage — specifically `service_healthy`, ever since the app applies
+      # migrations itself on start. The `storage` schema is created by the
+      # storage-api service on its own start, and migration
+      # `0015_tasks.sql` provisions a bucket in it. While migrations were a separate
+      # manual step, the customer ran them after everything was up, and the race
+      # did not exist. Without this line the first install fails with
+      # `relation "storage.buckets" does not exist` — measured in a clean room
+      # 2026-09-18 (the container exited with code 0, came up on the second try via
+      # `restart: unless-stopped`, while `up -d --wait` reported an error).
+      storage:
+        condition: service_healthy
+      guacd:
+        condition: service_started
+      executor:
+        condition: service_started
+    ports:
+      - "${SAK_PORT:-3000}:3000"
+    environment:
+      # ⚠⚠ SAK_PUBLIC_SUPABASE_URL must be an address reachable both from the browser
+      # and from this container. Not overcaution, but a measured fact:
+      # `serverSupabaseServiceRole` (which `requireUser`/`requireRole`,
+      # i.e. all gated BFF routes, rest on) takes the url from `config.public.supabase.url`,
+      # i.e. the server-side client goes to the public address.
+      # Consequence: the default `http://localhost:8000` only fits host-dev —
+      # inside a container `localhost` is the container itself, and every gated
+      # route returns 500. For an install set the machine's IP/DNS name
+      # (e.g. `http://192.0.2.10:8000`), not `localhost`.
+      # There is deliberately no default here: with a
+      # non-empty `:-http://localhost:8000` the image entrypoint could not
+      # tell "the customer really wants localhost" from "not set", and
+      # address auto-detection is only possible in the container. Empty =
+      # the entrypoint picks itself and says out loud what it picked.
+      NUXT_PUBLIC_SUPABASE_URL: ${SAK_PUBLIC_SUPABASE_URL:-}
+      NUXT_PUBLIC_SUPABASE_KEY: ${ANON_KEY}
+      # ADR-019: Secure cookie only over TLS; without this line the .env value reached nothing.
+      NUXT_PUBLIC_SUPABASE_COOKIE_OPTIONS_SECURE: ${NUXT_PUBLIC_SUPABASE_COOKIE_OPTIONS_SECURE:-false}
+      # BFF rate limits per minute (server/utils/rate-limit.ts); sign-in itself is limited in Kong.
+      SAK_SESSION_OPEN_PER_MIN: ${SAK_SESSION_OPEN_PER_MIN:-30}
+      SAK_AUTH_ACTION_PER_MIN: ${SAK_AUTH_ACTION_PER_MIN:-5}
+      # Our own server-side client (`server/repositories/supabase-admin.ts`
+      # reads `process.env.SUPABASE_URL`) goes the internal way — better
+      # than through the published port.
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      # ⚠ The @nuxtjs/supabase module in a built image reads the service key ONLY from
+      # `NUXT_SUPABASE_SECRET_KEY`/`NUXT_SUPABASE_SERVICE_KEY` (the runtime override of
+      # `runtimeConfig.supabase.*` requires the `NUXT_` prefix). A bare
+      # `SUPABASE_SERVICE_KEY` works only in dev, because there the module reads it at
+      # start; the image has no `.env` by construction (`.dockerignore`) → without this
+      # line every `requireRole` route fails with
+      # "Missing server key. Set NUXT_SUPABASE_SECRET_KEY" (measured 2026-09-04).
+      NUXT_SUPABASE_SECRET_KEY: ${SERVICE_ROLE_KEY}
+      # ADR-009: losing this key = losing all stored passwords. Generated by
+      # `scripts/bootstrap.mjs`; part of the backup set, separate from the dump.
+      NUXT_CRED_ENCRYPTION_KEY: ${NUXT_CRED_ENCRYPTION_KEY:-}
+      # Not for signing — `backup.mjs` uses it to write the backup-set fingerprint.
+      JWT_SECRET: ${JWT_SECRET}
+      NUXT_GUACD_HOST: guacd
+      NUXT_GUACD_PORT: "4822"
+      # ADR-016: legacy `/run` (device local commands) — separate from `/run-task`.
+      NUXT_EXECUTOR_URL: http://executor:8090/run
+      NUXT_EXECUTOR_SECRET: ${EXECUTOR_SHARED_SECRET}
+      # ADR-018: task runtime registry. Empty disables the whole scheduler
+      # (measured 2026-09-21 — see docker/.env.example), so the template ships it
+      # non-empty. Path `/run-task`, not legacy `/run`.
+      NUXT_TASK_RUNNERS: ${NUXT_TASK_RUNNERS:-}
+      NUXT_PUBLIC_PHONE_MATCH_TAIL: ${NUXT_PUBLIC_PHONE_MATCH_TAIL:-}
+      NUXT_PUBLIC_APP_URL: ${NUXT_PUBLIC_APP_URL:-}
+      PBX_WEBHOOK_SECRET: ${PBX_WEBHOOK_SECRET:-}
+      # Ops inside the image: `docker compose run --rm app node
+      # scripts/db-migrate.mjs` — psql/pg_dump take the connection from PG* variables,
+      # so the customer needs neither Node, nor sources, nor a docker CLI in the container.
+      PGHOST: ${POSTGRES_HOST:-db}
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-postgres}
+      RBAC_ADMIN_EMAIL: ${RBAC_ADMIN_EMAIL:-}
+      RBAC_ADMIN_PASSWORD: ${RBAC_ADMIN_PASSWORD:-}
+      # Backup: inside the container the path is fixed, and where it leads on the host
+      # is decided by `BACKUP_HOST_DIR` below.
+      # There is deliberately no schedule here: it lives in the task itself (`task_triggers.cron`),
+      # otherwise an admin would have to edit `.env` and restart the stack to change the time.
+      BACKUP_DIR: /backups
+      # 30 = a month of nightly copies (cron `0 3 * * *`).
+      # It used to be 7 — i.e. a week.
+      BACKUP_KEEP: ${BACKUP_KEEP:-30}
+    volumes:
+      # Docker reads a value without a leading `/` as a volume name, with a slash — as a
+      # bind mount. So the default (`sak-backups`) puts dumps into a managed volume, and
+      # a customer who sets `BACKUP_HOST_DIR=/srv/backups` gets their own directory —
+      # and in neither case does a dump land in the working tree (there it
+      # clutters git status and the build context).
+      - ${BACKUP_HOST_DIR:-sak-backups}:/backups
+
+  # ---------------------------------------------------------------------------
+  # SmartAnyKey: local-task executor (ADR-016 — an isolated executor of local
+  # tasks). The BFF sends POST /run over the internal network +
+  # shared secret; zero Supabase credentials in this image. The port is published
+  # locally for the host-dev BFF (like guacd 4822); in prod the BFF reaches
+  # `executor:8090` over the compose network (do not publish the port outside).
+  # ponytail: resource limits at container level, not per job (accepted ceiling).
+  # ---------------------------------------------------------------------------
+  executor:
+    # An image, not `build:` — the customer brings up an install without sources. Local build and
+    # port publishing — in `docker-compose.dev.yml` / `scripts/release.mjs`.
+    image: ${SAK_EXECUTOR_IMAGE:-ghcr.io/darthgit/smartanykey-executor}:${SAK_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      EXECUTOR_SHARED_SECRET: ${EXECUTOR_SHARED_SECRET}
+      # Task environment cache (venv / node_modules) keyed by
+      # the deps hash. Limit + LRU eviction in the harness — the volume does not grow unbounded.
+      RUNNER_CACHE_MAX_MB: ${RUNNER_CACHE_MAX_MB:-10240}
+    volumes:
+      - runner-cache:/cache
+    # ponytail: resource limits at container level, not per job (accepted ceiling).
+    # 256m was enough for snippets; tasks install packages (pip/pnpm) and
+    # hold data in memory — 1g.
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 512
+
+volumes:
+  db-config:
+  db-data:
+  storage-data:
+  # DB dumps when `BACKUP_HOST_DIR` is not set. A volume, not a directory in the tree:
+  # survives container re-creation and stays out of the build context.
+  sak-backups:
+  # Task environment cache: venv/node_modules keyed by the deps hash.
+  # Survives a container restart — otherwise every run would reinstall packages.
+  runner-cache:

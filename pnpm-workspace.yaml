@@ -1,0 +1,14 @@
+# pnpm ≥11: settings live here (NOT the package.json "pnpm" field — it is ignored)
+
+# Hoist deps into node_modules root: Nitro dev resolves externalized deps
+# (defu, …) via ESM walk-up; a stray node_modules ABOVE the project (e.g.
+# ~/projects/node_modules) shadows them with old versions → 500 on GET /.
+shamefullyHoist: true
+
+allowBuilds:
+  '@parcel/watcher': true
+  cpu-features: false  # optional native crypto accel — ssh2 falls back to pure JS
+  esbuild: true
+  ssh2: false  # native binding not needed for shell/exec over pure-JS crypto
+  unrs-resolver: true
+  vue-demi: true
