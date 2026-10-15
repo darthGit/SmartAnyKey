@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 
 const compose = readFileSync('docker/docker-compose.yml', 'utf8')
 const overlay = readFileSync('docker/docker-compose.dev.yml', 'utf8')
+const demo = readFileSync('docker/docker-compose.demo.yml', 'utf8')
 const kong = readFileSync('docker/config/api/kong.yml', 'utf8')
 const envExample = readFileSync('docker/.env.example', 'utf8')
 
@@ -66,7 +67,7 @@ describe('client compose composition', () => {
     expect(target('db', '/var/lib/postgresql/data'), 'PGDATA').toMatch(/^[a-z][\w-]*$/)
     expect(target('storage', '/var/lib/storage'), 'Storage files').toMatch(/^[a-z][\w-]*$/)
 
-    const mounts = [...`${compose}\n${overlay}`.matchAll(/^\s+- \.\/config\/([^:\s]+):/gm)].map(m => m[1])
+    const mounts = [...`${compose}\n${overlay}\n${demo}`.matchAll(/^\s+- \.\/config\/([^:\s]+):/gm)].map(m => m[1])
     const tracked = execFileSync('git', ['ls-files', 'docker/config'], { encoding: 'utf8' })
       .split('\n').filter(Boolean).map(f => f.slice('docker/config/'.length))
     expect(tracked.length, 'docker/config holds the mounted configs').toBeGreaterThan(0)

@@ -8,13 +8,15 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const README = readFileSync('README.md', 'utf8')
+// The full manual path moved out of the README into the installation guide.
+const INSTALL = readFileSync('docs/installation.md', 'utf8')
 
-/** Section body from its `## ` to the next `## ` of the same level. */
-function section(title: string): string {
-  const re = new RegExp(`^## ${title}[^\\n]*$([\\s\\S]*?)(?=^## |\\z)`, 'm')
-  const m = README.match(re)
+/** Section body from its `## ` to the next `## ` or the end of the file (JS has no `\z`). */
+function section(title: string, doc = README): string {
+  const re = new RegExp(`^## ${title}[^\\n]*$([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, 'm')
+  const m = doc.match(re)
   if (!m)
-    throw new Error(`README.md has no "## ${title}" section`)
+    throw new Error(`no "## ${title}" section`)
   return m[1]
 }
 
@@ -40,7 +42,7 @@ describe('README quickstart (AC-6)', () => {
   it('manual_install_section_keeps_the_full_path', () => {
     // Existing installs and automation live by this path — removing it would mean
     // hiding unfinished work by silence.
-    const body = section('Manual install')
+    const body = section('Manual install', INSTALL)
     for (const kept of ['bootstrap.mjs', 'db-migrate.mjs', 'seed-admin.mjs'])
       expect(body, `Manual install must keep ${kept}`).toContain(kept)
   })

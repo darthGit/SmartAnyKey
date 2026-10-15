@@ -64,13 +64,13 @@ describe('install.sh (AC-3)', () => {
     expect(df.indexOf('chown node:node /backups')).toBeLessThan(df.indexOf('USER node'))
   })
 
-  it('manual_path_in_readme_carries_the_same_step', () => {
-    // README promises «the steps `install.sh` performs … the same path, spelled
-    // out» — the third door: if the permissions step is missing there, the
-    // documented manual path reproduces the defect.
-    const readme = readFileSync('README.md', 'utf8')
-    const manual = readme.slice(readme.indexOf('## Manual install'))
-    expect(manual, 'manual path in README lacks the /backups permissions step')
+  it('manual_path_in_docs_carries_the_same_step', () => {
+    // docs/installation.md promises «the steps `install.sh` performs … the same
+    // path, spelled out» — the third door: if the permissions step is missing
+    // there, the documented manual path reproduces the defect.
+    const doc = readFileSync('docs/installation.md', 'utf8')
+    const manual = doc.slice(doc.indexOf('## Manual install'))
+    expect(manual, 'manual path in docs/installation.md lacks the /backups permissions step')
       .toMatch(/chown node:node \/backups/)
   })
 

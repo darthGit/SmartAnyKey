@@ -32,7 +32,7 @@ const TARGETS = [
   { label: 'RDP dev (dev-rdp)', set: 'RDP dev [dev-rdp]', host: 'dev-rdp', port: 3389, action: 'rdp', user: 'abc', pass: 'testbox-secret-pass', type: 'pc' },
 ]
 
-function keyHex() {
+export function keyHex() {
   let k = process.env.NUXT_CRED_ENCRYPTION_KEY
   if (!k) {
     const line = readFileSync('.env', 'utf8').split('\n').find(l => l.startsWith('NUXT_CRED_ENCRYPTION_KEY='))
@@ -43,7 +43,7 @@ function keyHex() {
   return k
 }
 
-function encryptHex(plain, kHex) {
+export function encryptHex(plain, kHex) {
   const iv = randomBytes(12)
   const c = createCipheriv('aes-256-gcm', Buffer.from(kHex, 'hex'), iv)
   const ct = Buffer.concat([c.update(plain, 'utf8'), c.final()])

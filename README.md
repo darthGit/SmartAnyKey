@@ -1,52 +1,128 @@
+<div align="center">
+
 # SmartAnyKey
 
-Self-hosted remote access for technicians who support many sites.
+**Self-hosted remote access for help desks that support many sites.**
 
-One board shows every location and every device on it. Click a device and the
-session opens in the browser — SSH, VNC or RDP — with credentials resolved and
-injected for you. Nothing to install on the technician's machine, no VPN client
-to hand out, no password spreadsheet.
+Every branch, every device, one search box. Click — and you are on the machine,
+in the browser, without typing a password.
 
-Built for internal support work: a help desk covering dozens or hundreds of
-shops, offices or branches, where the person answering the phone needs to be on
-the target machine in seconds.
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](./LICENSE)
+[![Release](https://img.shields.io/github/v/release/darthGit/SmartAnyKey)](https://github.com/darthGit/SmartAnyKey/releases)
+[![Images on GHCR](https://img.shields.io/badge/images-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/darthGit?tab=packages&repo_name=SmartAnyKey)
 
-> **Status: early release.** The features below work and are tested, but the
-> application is not yet hardened for exposure beyond a trusted network — see
-> [Status and roadmap](#status-and-roadmap) for what is still missing.
+**English** · [Українська](./README.uk.md)
+
+<img src="docs/media/en/hero.gif" alt="A phone number typed into the search finds branch 142; one click opens the router terminal, the next opens the front-desk screen" width="900">
+
+</div>
+
+## Why
+
+A help desk that covers dozens or hundreds of branches lives on the phone. The
+caller says "the front desk is frozen", and the technician has to find the branch,
+find the machine, find the password, start the right client — while the caller
+waits. SmartAnyKey turns that into one search and one click:
+
+- **No client software and no VPN for the technician** — SSH, VNC and RDP open in
+  the browser tab.
+- **Nothing installed on the devices** — it speaks the protocols they already
+  have. Routers, PCs, signage players, recorders stay as they are.
+- **No password lookup** — credentials are stored encrypted and injected into
+  the session; the technician never sees them.
+- **Self-hosted** — one `docker compose` stack on your own server, inside your
+  network.
+
+## A call from branch 142
+
+The branch line rings: *+1 555 0142*. The technician types the number — the
+search matches it against branch contacts and opens the branch. One click on
+**Router** gives a terminal; one click on **Front desk** gives its screen. The
+GIF above is exactly that, recorded on the demo data that ships with the project.
 
 ## What you get
 
-- **Browser sessions, no client software.** SSH in a real terminal (xterm.js),
-  VNC and RDP through a Guacamole bridge. Several sessions at once in a tiling
-  mosaic — drag panes, split, keep a terminal alive while you open another.
-- **SFTP file transfer** in the same session surface.
-- **Inventory by site.** Points (locations) with their devices, contacts and
-  notes. Search by device name, address or phone number.
-- **Credential manager.** Named credential sets resolved in four levels —
-  device, device type, point, global. Passwords are encrypted at rest
-  (AES-256-GCM); the key lives in the environment, never in the database.
-- **Auto-discovery.** Scan a site's network, get a proposed diff (new / matched
-  / changed / missing) and apply what you agree with. Nothing is written
-  without your confirmation.
-- **Health checks.** On-demand probes per device, with a per-point health card.
-- **Scheduled tasks.** Run your own Python, Node or shell scripts on a cron or
-  a webhook, with dependencies installed once into a cached environment. Useful
-  for backups, reports and notifications.
-- **Roles.** Viewer, operator, admin — enforced both in the database (RLS) and
-  at the API.
-- **Two languages** out of the box (English, Ukrainian); adding one is a single
-  JSON file.
+### Sessions side by side
+
+Open SSH, VNC and RDP sessions next to each other and arrange them like
+windows: drag a pane onto a neighbour's edge to split, drag the splitter to
+resize. The terminal stays alive while the next session connects.
+
+<img src="docs/media/en/tiling.gif" alt="Router terminal, front-desk VNC and back-office RDP open at once; the RDP pane is dragged under the terminal" width="900">
+
+### Find what is on a branch network
+
+Scan a branch's subnet and get a proposed diff: hosts that are new, matched,
+changed or missing, each classified by **your** rules (ports, banners,
+certificates). Nothing is written until you confirm — one click adds everything
+that matched.
+
+<img src="docs/media/en/discovery.gif" alt="The scan of branch 142 finds six hosts; three new ones are added with one click" width="900">
+
+### Everything else the call needs
+
+<table>
+<tr>
+<td width="50%">
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/media/en/board-light.png">
+  <img src="docs/media/en/board-dark.png" alt="Board with branches expanded and the health card of branch 142: device status, contacts, notes">
+</picture>
+<p><b>Branch card.</b> Live device status, who to call, notes for the next
+technician and runbooks that apply to the devices on this branch.</p>
+</td>
+<td width="50%">
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/media/en/credentials-light.png">
+  <img src="docs/media/en/credentials-dark.png" alt="Credential sets list: branch routers, signage players, front desk, back office">
+</picture>
+<p><b>Credentials once, for every branch.</b> Named credential sets resolved
+device → type → branch → global. Encrypted at rest, decrypted only on the
+server, every use logged.</p>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/media/en/tasks-light.png">
+  <img src="docs/media/en/tasks-dark.png" alt="Scheduled task run with a live log: router configs saved branch by branch">
+</picture>
+<p><b>Scheduled tasks.</b> Your own Python, Node or shell scripts on a cron or a
+webhook, with a live log, retries and files kept per run — nightly config
+backups, reports, notifications.</p>
+</td>
+<td width="50%">
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/media/en/files-light.png">
+  <img src="docs/media/en/files-dark.png" alt="File manager connected to the branch router over SFTP">
+</picture>
+<p><b>Files.</b> Browse, upload and download over SFTP on any SSH device, in the
+same pane grid.</p>
+</td>
+</tr>
+</table>
+
+And: roles (viewer, operator, admin) enforced in the database and at the API,
+commands in the device menu, CSV import, a drift inbox for scheduled rescans,
+English and Ukrainian interface.
 
 ## Requirements
 
-- Docker with Compose v2. That is all you need to run it.
-- To build from source: Node 22 and pnpm 11.
+Measured on a clean install of v0.1.0 (nine containers, idle, no open sessions):
 
-## Quickstart — run the release images
+| | |
+| :-- | :-- |
+| Memory | ~0.9 GB in use |
+| Disk | 3.8 GB of images, plus your data |
+| Software | Docker with Compose v2 |
 
-Take the `docker/` directory, run one script, open a browser. No source code,
-no Node, no pnpm — everything runs through the released images.
+Each open graphical session adds load on `guacd` and the app; plan with headroom
+— 2 GB of RAM is a sensible floor for a small team.
+
+## Quickstart
+
+You need a machine with Docker and Compose v2. Take the `docker/`
+directory, run one script, open a browser — no source code, Node or pnpm.
 
 ```bash
 # 1. Generate your own secrets, start the stack, wait until it is healthy.
@@ -58,209 +134,94 @@ no Node, no pnpm — everything runs through the released images.
 # 3. Create the first administrator on the setup screen it shows you.
 ```
 
-That is the whole install. The schema is applied by the application itself on
-startup, and the first administrator is created in the browser — neither is a
-step you run.
+The schema is applied by the application on startup. Own registry, unattended
+install, choosing the address, TLS and the full manual path:
+**[docs/installation.md](docs/installation.md)**.
 
-**Own registry?** The script runs through the app image, so pass the
-coordinates once; it writes them into the generated `docker/.env` for every
-later command:
+## Try it with a demo branch network
 
-```bash
-SAK_IMAGE=registry.example/smartanykey-app SAK_TAG=v0.1.0 ./docker/install.sh
-```
-
-**Unattended install** (CI, a rebuilt test stand)? Set `RBAC_ADMIN_EMAIL` and
-`RBAC_ADMIN_PASSWORD` in `docker/.env` before running the script and it creates
-the administrator for you — the setup screen then never appears.
-
-> **The address matters, and the script picks it for you.** The server-side
-> Supabase client uses the same public address as the browser, so `localhost`
-> cannot work: inside a container it is the container itself, and every
-> authenticated route answers 500. `install.sh` detects the machine's address
-> and writes it to `docker/.env`; the application refuses to start on a loopback
-> address rather than serving a half-broken install. A machine with several
-> interfaces may get the wrong one — set `SAK_PUBLIC_SUPABASE_URL` yourself and
-> re-run.
-
-> **Running over plain HTTP?** Leave
-> `NUXT_PUBLIC_SUPABASE_COOKIE_OPTIONS_SECURE=false`. The session cookie is sent
-> as `Secure` only behind TLS — set it to `true` once you terminate TLS in front
-> of the app, and the browser will silently drop the cookie until you do.
-> The same switch turns on `Strict-Transport-Security` (one day, no subdomains):
-> after you remove TLS, browsers that saw it keep using https for up to a day.
-
-## Manual install — the steps `install.sh` performs
-
-Use this when you want to see each step, automate it differently, or fix a
-half-finished install. It is the same path, spelled out.
+No devices to point it at yet? Add `--demo`:
 
 ```bash
-# 1. Generate your own secrets — all keys signed locally.
-#    The project directory is mounted because this step reads the .env template
-#    next to the compose file and writes the generated .env beside it.
-docker compose -f docker/docker-compose.yml run --rm --no-deps \
-  -u "$(id -u):$(id -g)" -v "$PWD:/work" -w /work app node /app/scripts/bootstrap.mjs
+./docker/install.sh --demo
 ```
 
-Two flags earn their place, both measured on a clean machine (2026-09-17):
-`--no-deps`, because without it compose starts the stack first and kong dies on
-the `.env` this very step is about to create; and `-u`, because the image runs
-as a non-root user, so on a directory it does not own the script stops with
-`EACCES: permission denied, open '.env'`. With `-u` the generated files belong
-to you.
+Besides the normal install this starts a fictional branch office next to the
+stack — a router and a signage player over SSH, a front-desk PC over VNC, a
+back-office PC over RDP, a printer and a video recorder to discover — and loads
+twelve demo branches with contacts and runbooks. Create the administrator, search
+for `142`, click **Router**. It is what the GIFs on this page were recorded on.
 
-`bootstrap.mjs` writes `docker/.env` and `.env` with freshly generated secrets.
-Do not skip it and do not copy `docker/.env.example` instead: the example file
-contains the **real, publicly known** Supabase demo keys, so an install started
-from it is an install anyone can read.
+The demo targets listen only inside the stack's network, but their passwords are
+public: use demo mode to try SmartAnyKey, not on a real installation. Remove it
+with `SAK_DEMO=` in `docker/.env` and a re-run of `./docker/install.sh`.
 
-```bash
-# 2. Put this machine's address in docker/.env (the script does this for you):
-#    SAK_PUBLIC_SUPABASE_URL=http://192.0.2.10:8000
+## Security model
 
-# 3. Start the stack (pulls both images)
-docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --wait
+SmartAnyKey holds the keys to every branch, so this is the part to read first.
 
-# 3.5. Give the dump directory to the application user. Docker creates the
-#      mount point as root, the image runs as `node`, so without this the
-#      backup task fails with EACCES while the UI shows it enabled.
-docker compose -f docker/docker-compose.yml --env-file docker/.env \
-  exec -T -u 0 app chown node:node /backups
+- **Credentials** are encrypted with AES-256-GCM. The key lives in the
+  environment, never in the database; passwords are decrypted only in the
+  server's memory and never reach the browser. Every resolve and copy is written
+  to an access log.
+- **Roles** — viewer, operator, admin — are checked twice: by row-level security
+  in Postgres and by the API before any session opens or command runs. There is
+  no self-signup; administrators create users.
+- **Nothing on the devices.** Sessions use the protocols the devices already
+  speak; no agent to install, update or trust.
+- **Small surface.** Only the app (3000) and the API gateway (8000/8443) listen on
+  the host; Postgres is reachable only inside the compose network.
+- **Abuse limits.** Sign-in is rate-limited per client address, opening sessions
+  per user.
+- **Browser hardening.** Content-Security-Policy on every page, frame protection,
+  HSTS once you run behind TLS.
+- **Your scripts run apart.** Scheduled tasks execute in a separate executor
+  container that has no database credentials.
 
-# 4. Create the schema — only needed if you skipped the automatic migration
-#    (SAK_SKIP_AUTO_MIGRATE=1); otherwise the application already did it.
-docker compose -f docker/docker-compose.yml run --rm app node scripts/db-migrate.mjs
+Found a vulnerability? Please report it privately — see [SECURITY.md](./SECURITY.md).
 
-# 5. Create the first administrator from the environment instead of the setup
-#    screen — set RBAC_ADMIN_EMAIL and RBAC_ADMIN_PASSWORD in docker/.env first
-docker compose -f docker/docker-compose.yml run --rm app node scripts/seed-admin.mjs
+## How it works
+
+```mermaid
+flowchart LR
+  tech["Technician's browser"] -->|"HTTPS / WSS :3000"| app["SmartAnyKey app<br/>Nuxt UI + API"]
+  tech -->|":8000"| kong["Kong gateway"]
+  kong --> sb["Supabase: Auth · PostgREST<br/>Realtime · Storage"]
+  sb --> db[("Postgres")]
+  app --> kong
+  app -->|"SSH · SFTP"| ssh["Routers, Linux boxes"]
+  app --> guacd["guacd"]
+  guacd -->|"VNC · RDP"| desk["PCs, front desks"]
+  app -->|"scan"| lan["Branch subnets"]
+  app --> exec["Task executor"]
 ```
 
-## Development — run from source
+Graphical sessions use Apache Guacamole's `guacd` with our own browser bridge;
+terminals and file transfer go over SSH straight from the app. Both run inside
+your network — the browser only ever talks to your server.
 
-```bash
-pnpm install
-pnpm build
+## How it compares
 
-# infrastructure + three fake targets to practise against (SSH, VNC, RDP)
-docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml \
-  --env-file docker/.env up -d
+- **[Apache Guacamole](https://guacamole.apache.org/)** is the clientless VNC/RDP/SSH
+  gateway SmartAnyKey's graphical sessions are built on. Guacamole gives you
+  connections; SmartAnyKey adds the help-desk layer around them — branches,
+  contacts, phone search, credential inheritance, network scans, tasks.
+- **[RustDesk](https://github.com/rustdesk/rustdesk)** and
+  **[MeshCentral](https://github.com/Ylianst/MeshCentral)** are remote-desktop and
+  device-management tools with their own software on the managed machines.
+  Choose them when you want an agent there; choose SmartAnyKey when the devices
+  should stay untouched and the work is organised around sites.
 
-pnpm dev:seed     # schema + demo taxonomy + the three dev targets
-pnpm dev          # the app itself, on :3000
-```
+<sub>Facts about other projects are taken from their own pages, checked October 2026.</sub>
 
-`pnpm dev:seed` prints the development login it creates. To also generate a
-large inventory to test against (300 points, ~2100 devices): `pnpm seed:demo`.
+## Status
 
-Adding `--profile app` to the compose command runs the application in a
-container as well, instead of `pnpm dev`. The dev overlay also brings up Supabase
-Studio on `http://127.0.0.1:54323` (`STUDIO_PORT`); the release compose does not
-carry it.
+**Works today:** everything above, one-command install from release images,
+backup and restore, rate limiting, security headers, English and Ukrainian.
 
-```bash
-pnpm test         # full suite
-pnpm test:ci      # the subset that needs no live database
-pnpm lint
-```
+**Not yet:**
 
-### Producing a release
-
-`scripts/release.mjs` builds and publishes both images, tagged from the
-argument you give it (or `git describe` if you give none). It runs unattended,
-so any CI runner can call it without a workflow file of ours; `--no-push`
-builds without publishing.
-
-```bash
-node scripts/release.mjs v1.2.3
-```
-
-## Operating notes
-
-**Upgrade by re-running the installer** with the new tag:
-`SAK_TAG=<new> ./docker/install.sh`. It keeps your `docker/.env` and removes
-containers of services a release no longer ships.
-
-**Your data lives in Docker volumes, not in `docker/`.** The database and stored
-files are the `db-data` and `storage-data` volumes of the `smartanykey` project.
-Replacing the `docker/` directory leaves them intact; `docker compose down -v`
-deletes them.
-
-**What runs:** Postgres; Supabase Auth, PostgREST, Realtime and Storage behind
-the Kong gateway; guacd; the app and its task executor — nine containers.
-
-**Only Kong (8000/8443) and the app (3000) listen on the host.** Postgres is
-reachable only inside the compose network.
-
-**Sign-in is rate-limited per client address** (`SAK_LOGIN_RATE_PER_MIN`, 10 a
-minute), and opening remote sessions per user (`SAK_SESSION_OPEN_PER_MIN`). Behind
-a reverse proxy every client arrives from the proxy's address and shares one
-sign-in budget — raise the limit or rate-limit at the proxy. There is no
-self-signup: administrators create users.
-
-**Run exactly one replica of `app`.** The scheduler lives inside the
-application process, so a second replica makes every cron job fire twice.
-`--scale app=2` is not supported.
-
-**Replace the demo keys.** This is what `bootstrap.mjs` is for — see step 1.
-Worth repeating because the failure is silent: a stack started from
-`.env.example` works perfectly and is readable by anyone who knows the
-published demo keys.
-
-**Keep two secrets outside the database.** `NUXT_CRED_ENCRYPTION_KEY` decrypts
-every stored password and `JWT_SECRET` signs the API keys. Lose the first and
-the credentials are gone even though the rows survive; lose the second and the
-stack will not come up elsewhere.
-
-## Backup and restore
-
-```bash
-# Dump public + auth + storage, gzipped, with rotation
-docker compose -f docker/docker-compose.yml run --rm \
-  -v /your/backup/dir:/backups -e BACKUP_DIR=/backups \
-  app node scripts/backup.mjs --keep 7
-```
-
-**A backup is three artifacts, and the dump is only the first.** Store
-`NUXT_CRED_ENCRYPTION_KEY` and `JWT_SECRET` separately from it — the script
-prints their SHA-256 fingerprints so you can check a safe copy against the live
-install without revealing the keys themselves.
-
-**The dump is not encrypted.** Every customer record in it is in plain text.
-Protecting the file and the medium it sits on is the installation's
-responsibility, not the tool's.
-
-To restore, the order matters:
-
-```bash
-docker compose -f docker/docker-compose.yml up -d db     # the database alone
-docker compose -f docker/docker-compose.yml run --rm --no-deps \
-  -v /your/backup/dir:/backups \
-  app node scripts/restore.mjs /backups/<dump>.sql.gz --yes
-docker compose -f docker/docker-compose.yml --env-file docker/.env up -d
-```
-
-Restore into a database that has **not** been migrated — the dump carries the
-schema itself. Put the two secrets from the backup set back into the
-environment before you rely on the result; `restore.mjs` finishes by decrypting
-one credential, so a wrong key fails loudly instead of leaving you with rows
-you cannot read.
-
-## Status and roadmap
-
-**Works today:** everything listed under [What you get](#what-you-get), a
-one-command install from release images, backup and restore, and an English and
-Ukrainian interface.
-
-**Before you expose it beyond a trusted network** — not done yet:
-
-- Rate limiting on sign-in and on the endpoints that open remote sessions.
-- Security headers: Content-Security-Policy, HSTS, frame protection.
-- Server error messages are English only (the interface itself is translated).
-
-**Operations:**
-
+- Server error messages are in English only (the interface itself is translated).
 - One-command rollback to the previous release, verified end to end.
 - A browser smoke test in CI: sign in → board → open a session.
 
@@ -271,6 +232,14 @@ Ukrainian interface.
 
 Monitoring and error tracking are left to your own stack: the services expose
 health checks, and logs go to Docker.
+
+## Documentation
+
+- [Installation](docs/installation.md) — options, TLS, the manual path
+- [Operations](docs/operations.md) — upgrades, data, backup and restore
+- [Development](docs/development.md) — running from source, demo data, releases
+- [Architecture decisions](docs/DECISIONS.md)
+- [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 
 ## License
 

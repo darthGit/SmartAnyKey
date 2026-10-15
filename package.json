@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:ci": "SAK_TEST_CI=1 vitest run",
     "dev:seed": "node scripts/seed-dev.mjs",
-    "seed:demo": "node scripts/seed-sql.mjs supabase/seeds/demo-scale.sql"
+    "seed:demo": "node scripts/seed-sql.mjs supabase/seeds/demo-scale.sql",
+    "seed:showcase": "NUXT_CRED_ENCRYPTION_KEY=$(grep ^NUXT_CRED_ENCRYPTION_KEY= docker/.env | cut -d= -f2) node scripts/seed-showcase.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

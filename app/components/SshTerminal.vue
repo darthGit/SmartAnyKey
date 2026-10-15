@@ -58,7 +58,9 @@ function scheduleResize() {
 
 onMounted(() => {
   term = new Terminal({
-    fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+    // xterm measures the cell on a canvas, and a canvas font rejects `var()` (falls back
+    // to 10px sans-serif) → cells wider than the glyphs, letters drawn spaced out.
+    fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim() || 'monospace',
     fontSize: 13,
     cursorBlink: true,
     theme: { background: '#0e0e0e' },

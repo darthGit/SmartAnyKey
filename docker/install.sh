@@ -13,8 +13,18 @@ set -eu
 # (scripts/bootstrap.mjs:76,157,164), while this script lives inside docker/.
 cd "$(dirname "$0")/.."
 
-COMPOSE_FILE=docker/docker-compose.yml
 ENV_FILE=docker/.env
+
+# Demo mode adds a fictional branch with SSH/VNC/RDP targets and seeds sample data.
+# Remembered in .env: a later re-run (the upgrade path, with --remove-orphans) would
+# otherwise delete the demo targets.
+SAK_DEMO="${SAK_DEMO:-}"
+if [ "${1:-}" = "--demo" ]; then SAK_DEMO=1; fi
+if [ -z "$SAK_DEMO" ] && [ -f "$ENV_FILE" ]; then
+  SAK_DEMO="$(grep -E '^SAK_DEMO=' "$ENV_FILE" | cut -d= -f2- || true)"
+fi
+COMPOSE_FILES="-f docker/docker-compose.yml"
+if [ "$SAK_DEMO" = 1 ]; then COMPOSE_FILES="$COMPOSE_FILES -f docker/docker-compose.demo.yml"; fi
 
 # The registry is a property of the installation (ADR-020). The bootstrap step runs through
 # the image, and the image coordinates live in .env, which does not exist yet — so with a non-default
@@ -36,7 +46,7 @@ say "1/3 Secrets"
 #                the mount the script fails with `ENOENT: docker/.env.example`.
 # An existing .env is not overwritten without --force and the exit stays zero —
 # so re-running the script is safe.
-docker compose -f "$COMPOSE_FILE" run --rm --no-deps \
+docker compose $COMPOSE_FILES run --rm --no-deps \
   -u "$(id -u):$(id -g)" -v "$PWD:/work" -w /work \
   app node /app/scripts/bootstrap.mjs
 
@@ -63,7 +73,7 @@ fi
 # BACKUP_HOST_DIR goes here too: it is a host thing (a directory or a volume name), and
 # the app cannot write it — compose reads it when the container starts.
 # Empty = the managed volume `sak-backups`; an absolute path = bind mount.
-for pair in "SAK_IMAGE=${SAK_IMAGE:-}" "SAK_EXECUTOR_IMAGE=${SAK_EXECUTOR_IMAGE:-}" "SAK_TAG=${SAK_TAG:-}" "BACKUP_HOST_DIR=${BACKUP_HOST_DIR:-}"; do
+for pair in "SAK_DEMO=${SAK_DEMO:-}" "SAK_IMAGE=${SAK_IMAGE:-}" "SAK_EXECUTOR_IMAGE=${SAK_EXECUTOR_IMAGE:-}" "SAK_TAG=${SAK_TAG:-}" "BACKUP_HOST_DIR=${BACKUP_HOST_DIR:-}"; do
   key="${pair%%=*}"; val="${pair#*=}"
   [ -n "$val" ] || continue
   if grep -qE "^${key}=" "$ENV_FILE"; then
@@ -78,14 +88,14 @@ say "2/3 Stack"
 # (kong `CMD kong health`, app — an HTTP probe), and waits exactly on them.
 # `--remove-orphans`: re-running the installer is the upgrade path, and a service a
 # release dropped would otherwise keep running (the old pooler kept Postgres on 5432).
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --remove-orphans --wait
+docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --remove-orphans --wait
 
 # Permissions on the dump directory. Measured 2026-09-21 in a clean room: the image runs
 # as `node` (uid 1000), and docker creates the `/backups` mount point — both
 # a managed volume (no directory in the image) and a bind land as `root:root`. So
 # `pg_dump` gets EACCES while the backup toggle is green. The path inside the
 # container is the same in both branches, so one chown fixes both.
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T -u 0 app \
+docker compose $COMPOSE_FILES --env-file "$ENV_FILE" exec -T -u 0 app \
   chown node:node /backups \
   || echo "⚠ could not fix permissions on /backups — backups will fail with EACCES"
 
@@ -97,7 +107,7 @@ say "3/3 First admin"
 RBAC_ADMIN_EMAIL="$(grep -E '^RBAC_ADMIN_EMAIL=' "$ENV_FILE" | cut -d= -f2- || true)"
 RBAC_ADMIN_PASSWORD="$(grep -E '^RBAC_ADMIN_PASSWORD=' "$ENV_FILE" | cut -d= -f2- || true)"
 if [ -n "$RBAC_ADMIN_EMAIL" ] && [ -n "$RBAC_ADMIN_PASSWORD" ]; then
-  docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" \
+  docker compose $COMPOSE_FILES --env-file "$ENV_FILE" \
     run --rm app node scripts/seed-admin.mjs
   echo "Admin created from RBAC_ADMIN_* — the /setup screen will not appear."
 else
@@ -107,7 +117,16 @@ fi
 # The app picks the address itself (scripts/public-address.mjs in its entrypoint) and
 # prints it to the log. A second place holding a copy of the same logic is exactly what
 # drifts; so here we quote the log rather than compute the address again.
+if [ "$SAK_DEMO" = 1 ]; then
+  say "Demo data"
+  docker compose $COMPOSE_FILES --env-file "$ENV_FILE" run --rm app node scripts/seed-showcase.mjs
+  # xrdp checks the system password inside the target; the app image has no docker CLI.
+  docker compose $COMPOSE_FILES --env-file "$ENV_FILE" exec -T demo-office \
+    bash -c "echo 'abc:demo-secret-pass' | chpasswd"
+  echo "Demo branch network ready — search for 142 on the board. Demo passwords are public."
+fi
+
 say "Done"
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" logs app 2>/dev/null \
+docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs app 2>/dev/null \
   | grep -- '\[public-address\]' | tail -1 || true
 echo "Open the app on port ${SAK_PORT:-3000} of this machine."

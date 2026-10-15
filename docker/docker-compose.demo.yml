@@ -1,0 +1,131 @@
+# Demo overlay: a fictional branch office to try SmartAnyKey on without real devices.
+#
+#   ./docker/install.sh --demo
+#
+# Adds a branch LAN (`corp.lan`, 10.42.142.0/24) with real SSH, VNC and RDP targets
+# and a few hosts that only open ports, so auto-discovery has something to find.
+# Branch 142 reaches them by IP; the other demo branches by names like
+# `desk.b117.corp.lan` — aliases of the same containers. Some names are left out on
+# purpose (gw.b188, office.b163, nvr.b135) so health checks show a device down.
+# Nothing here listens on the host: the targets are reachable only by guacd and the app.
+# Demo passwords are public by design — do not keep this overlay on a real install.
+
+services:
+
+  # The app scans the branch subnet and opens SSH; guacd opens VNC/RDP. Their addresses
+  # come from the upper half of the subnet (ip_range), outside the scanned .0/26.
+  app:
+    networks: [default, demo-lan]
+
+  guacd:
+    networks: [default, demo-lan]
+
+  demo-router:
+    image: lscr.io/linuxserver/openssh-server:latest
+    restart: unless-stopped
+    hostname: branch142-gw
+    container_name: branch142-gw
+    environment: &demo-ssh
+      USER_NAME: support
+      USER_PASSWORD: demo-secret-pass
+      PASSWORD_ACCESS: "true"
+      LISTEN_PORT: "22"
+    networks:
+      demo-lan:
+        ipv4_address: 10.42.142.1
+        aliases: [gw.b101.corp.lan, gw.b104.corp.lan, gw.b117.corp.lan, gw.b123.corp.lan, gw.b128.corp.lan, gw.b135.corp.lan, gw.b150.corp.lan, gw.b163.corp.lan, gw.b171.corp.lan, gw.b205.corp.lan]
+
+  # Router web UI and DNS on the router's own address (shares its network stack).
+  demo-router-svc:
+    image: python:3.12-alpine
+    restart: unless-stopped
+    network_mode: service:demo-router
+    command: python /fake-service.py
+    environment:
+      FAKE_PORTS: "53=raw 80=http"
+      FAKE_SERVER: "Gateway WebAdmin"
+    volumes:
+      - ./config/demo/fake-service.py:/fake-service.py:ro
+
+  # Front-desk workstation (VNC). TigerVNC truncates the password to 8 characters.
+  demo-desk:
+    image: accetto/ubuntu-vnc-xfce-g3:latest
+    restart: unless-stopped
+    container_name: branch142-desk
+    shm_size: 512m
+    environment:
+      VNC_PW: demo-secret-pass
+      VNC_RESOLUTION: 1280x720
+    networks:
+      demo-lan:
+        ipv4_address: 10.42.142.11
+        aliases: [desk.b101.corp.lan, desk.b104.corp.lan, desk.b117.corp.lan, desk.b123.corp.lan, desk.b128.corp.lan, desk.b135.corp.lan, desk.b150.corp.lan, desk.b163.corp.lan, desk.b171.corp.lan, desk.b188.corp.lan, desk.b205.corp.lan]
+
+  # Back-office PC (RDP). xrdp logs in the system user `abc`; install.sh sets its password.
+  demo-office:
+    image: lscr.io/linuxserver/rdesktop:ubuntu-xfce
+    restart: unless-stopped
+    container_name: branch142-office
+    shm_size: 512m
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+    networks:
+      demo-lan:
+        ipv4_address: 10.42.142.21
+        aliases: [office.b101.corp.lan, office.b104.corp.lan, office.b117.corp.lan, office.b123.corp.lan, office.b128.corp.lan, office.b135.corp.lan, office.b150.corp.lan, office.b171.corp.lan, office.b188.corp.lan, office.b205.corp.lan]
+
+  demo-signage:
+    image: lscr.io/linuxserver/openssh-server:latest
+    restart: unless-stopped
+    hostname: branch142-signage
+    container_name: branch142-signage
+    environment: *demo-ssh
+    networks:
+      demo-lan:
+        ipv4_address: 10.42.142.31
+        aliases: [signage.b101.corp.lan, signage.b104.corp.lan, signage.b117.corp.lan, signage.b123.corp.lan, signage.b128.corp.lan, signage.b135.corp.lan, signage.b150.corp.lan, signage.b163.corp.lan, signage.b171.corp.lan, signage.b188.corp.lan, signage.b205.corp.lan]
+
+  demo-printer:
+    image: python:3.12-alpine
+    restart: unless-stopped
+    container_name: branch142-printer
+    command: python /fake-service.py
+    environment:
+      FAKE_PORTS: "80=http 9100=raw"
+      FAKE_SERVER: "Label Printer LP-420"
+    volumes:
+      - ./config/demo/fake-service.py:/fake-service.py:ro
+    networks:
+      demo-lan:
+        ipv4_address: 10.42.142.41
+        aliases: [printer.b101.corp.lan, printer.b117.corp.lan, printer.b135.corp.lan, printer.b150.corp.lan, printer.b171.corp.lan]
+
+  demo-nvr:
+    image: python:3.12-alpine
+    restart: unless-stopped
+    container_name: branch142-nvr
+    command: python /fake-service.py
+    environment:
+      FAKE_PORTS: "80=http 8080=http"
+      FAKE_SERVER: "NVR-16 Video Recorder"
+    volumes:
+      - ./config/demo/fake-service.py:/fake-service.py:ro
+    networks:
+      demo-lan:
+        ipv4_address: 10.42.142.51
+        aliases: [nvr.b101.corp.lan, nvr.b117.corp.lan, nvr.b150.corp.lan, nvr.b171.corp.lan]
+
+networks:
+  demo-lan:
+    # Reverse DNS on this network is `<container_name>.<network name>` — what a scan
+    # shows as a device's hostname, so fixed names make it read like a real site.
+    name: corp.lan
+    ipam:
+      config:
+        - subnet: 10.42.142.0/24
+          # Branch devices sit in .0/26 (the branch's subnet in the demo data); Docker
+          # hands app and guacd addresses from the upper half, so a scan of the branch
+          # never finds the host machine or the stack itself.
+          ip_range: 10.42.142.128/25
+          gateway: 10.42.142.254
