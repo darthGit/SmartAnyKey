@@ -48,7 +48,7 @@ say "1/3 Secrets"
 # so re-running the script is safe.
 docker compose $COMPOSE_FILES run --rm --no-deps \
   -u "$(id -u):$(id -g)" -v "$PWD:/work" -w /work \
-  app node /app/scripts/bootstrap.mjs
+  app node /app/scripts/bootstrap.mjs --from-installer
 
 say "1.5/3 Machine address and image coordinates"
 # ⚠ Detecting the address inside a container is impossible, and that is measured, not inferred:
@@ -106,27 +106,34 @@ say "3/3 First admin"
 # in both cases: is there at least one `profiles.role='admin'`.
 RBAC_ADMIN_EMAIL="$(grep -E '^RBAC_ADMIN_EMAIL=' "$ENV_FILE" | cut -d= -f2- || true)"
 RBAC_ADMIN_PASSWORD="$(grep -E '^RBAC_ADMIN_PASSWORD=' "$ENV_FILE" | cut -d= -f2- || true)"
+# A re-run (an upgrade, adding --demo) finds the admin already there: ask the app
+# whether /setup is still open instead of sending the person to a closed screen.
+SETUP_OPEN="$(docker compose $COMPOSE_FILES --env-file "$ENV_FILE" exec -T app node -e \
+  "fetch('http://127.0.0.1:3000/api/setup/status').then(r => r.json()).then(j => process.stdout.write(String(j.open)))" \
+  2>/dev/null || true)"
 if [ -n "$RBAC_ADMIN_EMAIL" ] && [ -n "$RBAC_ADMIN_PASSWORD" ]; then
   docker compose $COMPOSE_FILES --env-file "$ENV_FILE" \
     run --rm app node scripts/seed-admin.mjs
   echo "Admin created from RBAC_ADMIN_* — the /setup screen will not appear."
+elif [ "$SETUP_OPEN" = true ]; then
+  echo "Create the first administrator in the browser — the app opens on the setup screen."
 else
-  echo "RBAC_ADMIN_* are empty — create the first admin in the browser at /setup."
+  echo "An administrator already exists — sign in."
 fi
 
-# The app picks the address itself (scripts/public-address.mjs in its entrypoint) and
-# prints it to the log. A second place holding a copy of the same logic is exactly what
-# drifts; so here we quote the log rather than compute the address again.
 if [ "$SAK_DEMO" = 1 ]; then
   say "Demo data"
   docker compose $COMPOSE_FILES --env-file "$ENV_FILE" run --rm app node scripts/seed-showcase.mjs
   # xrdp checks the system password inside the target; the app image has no docker CLI.
   docker compose $COMPOSE_FILES --env-file "$ENV_FILE" exec -T demo-office \
-    bash -c "echo 'abc:demo-secret-pass' | chpasswd"
+    bash -c "echo 'abc:demo-secret-pass' | chpasswd" \
+    || echo "⚠ could not set the back-office RDP password — RDP to the demo PC will ask for one"
   echo "Demo branch network ready — search for 142 on the board. Demo passwords are public."
 fi
 
 say "Done"
-docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs app 2>/dev/null \
-  | grep -- '\[public-address\]' | tail -1 || true
-echo "Open the app on port ${SAK_PORT:-3000} of this machine."
+# The address step above (or the person) stored the install address; the app is the
+# same host on its own port. Reading the stored value, not detecting it a second time.
+APP_HOST="$(grep -E '^SAK_PUBLIC_SUPABASE_URL=' "$ENV_FILE" | cut -d= -f2- | sed -E 's|^https?://||; s|[:/].*$||')"
+APP_PORT="$(grep -E '^SAK_PORT=' "$ENV_FILE" | cut -d= -f2- || true)"
+echo "Open http://${APP_HOST}:${APP_PORT:-3000}"

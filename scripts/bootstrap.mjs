@@ -2,7 +2,7 @@
 // secrets, so an install does not go to production on the publicly known demo
 // keys from `docker/.env.example`.
 //
-//   node scripts/bootstrap.mjs [--force]
+//   node scripts/bootstrap.mjs [--force] [--from-installer]
 //   docker compose run --rm app node scripts/bootstrap.mjs
 //
 // Why a separate step instead of "copy .env.example": the example holds the
@@ -203,16 +203,24 @@ function main(argv) {
     console.log('NUXT_CRED_ENCRYPTION_KEY, without which all stored passwords are dead.')
     console.log('To really regenerate, use `--force` after saving the old key.')
   }
-  if (Object.values(results).includes('written')) {
-    console.log('\nNext:')
-    console.log('  1. docker compose -f docker/docker-compose.yml --env-file docker/.env up -d')
-    console.log('  2. docker compose … run --rm app node scripts/db-migrate.mjs')
-    console.log('  3. set RBAC_ADMIN_EMAIL/RBAC_ADMIN_PASSWORD in .env, then')
-    console.log('     docker compose … run --rm app node scripts/seed-admin.mjs')
-    console.log('\n⚠ If the app runs in compose, set SAK_PUBLIC_SUPABASE_URL')
-    console.log('  to the machine IP/DNS: the server Supabase client uses the PUBLIC address,')
-    console.log('  so with `localhost` every gated route returns 500.')
-  }
+  for (const line of nextSteps({ written: Object.values(results).includes('written'), fromInstaller: argv.includes('--from-installer') }))
+    console.log(line)
+}
+
+/** The manual path, printed only when someone runs this by hand: install.sh does all of it. */
+export function nextSteps({ written, fromInstaller }) {
+  if (!written || fromInstaller)
+    return []
+  return [
+    '\nNext:',
+    '  1. docker compose -f docker/docker-compose.yml --env-file docker/.env up -d',
+    '  2. docker compose … run --rm app node scripts/db-migrate.mjs',
+    '  3. set RBAC_ADMIN_EMAIL/RBAC_ADMIN_PASSWORD in .env, then',
+    '     docker compose … run --rm app node scripts/seed-admin.mjs',
+    '\n⚠ If the app runs in compose, set SAK_PUBLIC_SUPABASE_URL',
+    '  to the machine IP/DNS: the server Supabase client uses the PUBLIC address,',
+    '  so with `localhost` every gated route returns 500.',
+  ]
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

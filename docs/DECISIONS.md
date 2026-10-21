@@ -29,3 +29,4 @@ new one supersedes it and the old row says so.
 | 021 | First-run initialisation: unauthenticated `/setup` + address from the host | ACCEPTED |
 | 022 | The public repository is an incremental export of a private monorepo | ACCEPTED |
 | 023 | Infrastructure composition: only the services the product uses | ACCEPTED |
+| 024 | Demo mode is a separate compose overlay, enabled by `install.sh --demo` | ACCEPTED |

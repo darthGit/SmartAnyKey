@@ -48,7 +48,9 @@ function main() {
   // inside the app image there is no docker CLI, and install.sh --demo does it instead.
   const rdp = spawnSync('docker', ['compose', '-f', 'docker/docker-compose.yml', '-f', 'docker/docker-compose.demo.yml',
     '--env-file', 'docker/.env', 'exec', '-T', 'demo-office', 'bash', '-c', `echo 'abc:demo-secret-pass' | chpasswd`], { encoding: 'utf8' })
-  console.log(rdp.status === 0 ? '✓ back office RDP: password set' : '· back office RDP password: set by install.sh --demo (no docker here)')
+  if (rdp.error) // no docker CLI — inside the app image install.sh --demo sets it instead
+    return
+  console.log(rdp.status === 0 ? '✓ back office RDP: password set' : '⚠ back office RDP: password not set (is demo-office up?)')
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)

@@ -104,6 +104,25 @@ describe('install.sh (AC-3)', () => {
 // and `bootstrap.mjs` copies the template verbatim. Result: every standard install
 // silently got an admin with a publicly known password, and `/setup` never showed
 // up. The same problem that got the admin removed from migration 0009.
+describe('install.sh talks to the client in plain terms', () => {
+  it('tells_bootstrap_it_runs_under_the_installer', () => {
+    expect(sh()).toMatch(/bootstrap\.mjs --from-installer/)
+  })
+
+  it('ends_with_a_link_to_open_not_a_port_to_combine', () => {
+    // "Install address: http://IP:8000" is the API; the person needs http://IP:3000.
+    const s = sh()
+    expect(s, 'the final message must print the app URL built from the install address')
+      .toMatch(/Open http:\/\/\$\{?APP_HOST/)
+  })
+
+  it('asks_for_setup_only_while_setup_is_open', () => {
+    // A re-run (e.g. adding --demo) on an install that already has an admin must not
+    // send the person to a /setup screen that is closed.
+    expect(sh()).toMatch(/api\/setup\/status/)
+  })
+})
+
 describe('.env.example ships no default admin (AC-2)', () => {
   it('rbac_admin_vars_are_empty_so_setup_screen_is_the_default_path', () => {
     const env = readFileSync(join(process.cwd(), 'docker/.env.example'), 'utf8')

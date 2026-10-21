@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error — .mjs script without types
-import { dockerEnv, generateSecrets, signHs256, staleSecrets, writeEnvFile } from '../../scripts/bootstrap.mjs'
+import { dockerEnv, generateSecrets, nextSteps, signHs256, staleSecrets, writeEnvFile } from '../../scripts/bootstrap.mjs'
 
 const DEMO = readFileSync('docker/.env.example', 'utf8')
 function demoValue(key: string): string {
@@ -106,5 +106,17 @@ describe('bootstrap: overwrite guard', () => {
     const path = join(dir, '.env')
     expect(writeEnvFile(path, 'A=1\n')).toBe('written')
     expect(readFileSync(path, 'utf8')).toBe('A=1\n')
+  })
+})
+
+describe('bootstrap: what it tells the person running it', () => {
+  it('prints_the_manual_steps_when_run_by_hand', () => {
+    expect(nextSteps({ written: true, fromInstaller: false }).join('\n')).toMatch(/db-migrate/)
+  })
+
+  it('stays_quiet_about_manual_steps_under_install_sh', () => {
+    // install.sh does every one of them itself; a client reading "run db-migrate"
+    // mid-install would think the install is waiting on them.
+    expect(nextSteps({ written: true, fromInstaller: true })).toEqual([])
   })
 })
