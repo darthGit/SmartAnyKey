@@ -2,8 +2,9 @@
 // JWT_SECRET, no key equals the public demo value) and NEVER overwrites an
 // existing .env without --force (losing NUXT_CRED_ENCRYPTION_KEY = losing every
 // password_enc, ADR-009).
+import { spawnSync } from 'node:child_process'
 import { createHmac } from 'node:crypto'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -118,5 +119,20 @@ describe('bootstrap: what it tells the person running it', () => {
     // install.sh does every one of them itself; a client reading "run db-migrate"
     // mid-install would think the install is waiting on them.
     expect(nextSteps({ written: true, fromInstaller: true })).toEqual([])
+  })
+})
+
+// v0.1.1 shipped install.sh calling `bootstrap.mjs --from-installer` while main() still
+// rejected every flag but --force: the installer died at step 1 on every machine.
+// Runs the real script the way install.sh does, in a scratch directory.
+describe('bootstrap: the flags install.sh passes', () => {
+  it('accepts --from-installer', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sak-boot-'))
+    mkdirSync(join(dir, 'docker'))
+    copyFileSync('docker/.env.example', join(dir, 'docker/.env.example'))
+    const res = spawnSync(process.execPath, [join(process.cwd(), 'scripts/bootstrap.mjs'), '--from-installer'], { cwd: dir, encoding: 'utf8' })
+    expect(res.stderr).not.toMatch(/unknown flag/)
+    expect(res.status).toBe(0)
+    expect(readFileSync(join(dir, 'docker/.env'), 'utf8')).toMatch(/^JWT_SECRET=/m)
   })
 })

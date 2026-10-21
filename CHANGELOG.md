@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] — 2026-10-21
+
+### Fixed
+
+- The 0.1.1 installer stopped at the first step with
+  `bootstrap: unknown flag: --from-installer`, both on a new install and on an
+  upgrade.
+
+### Added
+
+- `./docker/install.sh --update` upgrades an existing install: new images and a
+  restart, without the install steps (secrets, address, first admin). The
+  "Update available" window shows this command.
+
 ## [0.1.1] — 2026-10-21
 
 Fixes from installing the public release on a clean machine.
@@ -60,5 +74,6 @@ First public release.
 - Rate limiting on sign-in and on opening sessions; self-signup disabled.
 - Content-Security-Policy, frame protection, HSTS behind TLS.
 
+[0.1.2]: https://github.com/darthGit/SmartAnyKey/releases/tag/v0.1.2
 [0.1.1]: https://github.com/darthGit/SmartAnyKey/releases/tag/v0.1.1
 [0.1.0]: https://github.com/darthGit/SmartAnyKey/releases/tag/v0.1.0

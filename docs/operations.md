@@ -2,18 +2,18 @@
 
 ## Running it
 
-**Upgrade by re-running the installer** from the new release's `docker/`
-directory — compose files change between releases, so update it first
-(`git pull` in a clone):
+**Upgrade** with the new release's `docker/` directory — compose files change
+between releases, so update it first (`git pull` in a clone):
 
 ```bash
 git pull
-./docker/install.sh                # the tag in docker/.env (latest by default)
-SAK_TAG=v0.2.0 ./docker/install.sh # or move to a specific release
+./docker/install.sh --update                # the tag in docker/.env (latest by default)
+SAK_TAG=v0.2.0 ./docker/install.sh --update # or move to a specific release
 ```
 
-It downloads the new images, keeps your `docker/.env` and removes containers of
-services a release no longer ships.
+`--update` downloads the new images, restarts the stack, removes containers of
+services a release no longer ships and prints the running version. It does not
+touch `docker/.env`, secrets or users; the app applies database migrations on start.
 
 **Admins see when a release is out.** Once a day (and at start) the server asks
 `api.github.com` for the latest release; the admin menu shows the running version,

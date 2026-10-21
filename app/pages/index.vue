@@ -648,7 +648,7 @@ async function signOut() {
           <ULink v-if="version?.url" :to="version.url" target="_blank" class="text-primary underline">{{ t('update.notes') }}</ULink>
           <p>{{ t('update.how') }}</p>
           <pre class="rounded bg-elevated p-3 font-mono text-xs">git pull
-SAK_TAG={{ version?.latest }} ./docker/install.sh</pre>
+SAK_TAG={{ version?.latest }} ./docker/install.sh --update</pre>
           <p class="text-muted">{{ t('update.keeps') }}</p>
         </div>
       </template>

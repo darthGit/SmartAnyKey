@@ -169,7 +169,7 @@ export function staleSecrets(envText, exampleText) {
 
 function main(argv) {
   const force = argv.includes('--force')
-  const unknown = argv.filter(a => a.startsWith('--') && a !== '--force')
+  const unknown = argv.filter(a => a.startsWith('--') && !['--force', '--from-installer'].includes(a))
   if (unknown.length)
     throw new Error(`unknown flag: ${unknown.join(', ')}`)
 

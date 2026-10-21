@@ -19,7 +19,20 @@ ENV_FILE=docker/.env
 # Remembered in .env: a later re-run (the upgrade path, with --remove-orphans) would
 # otherwise delete the demo targets.
 SAK_DEMO="${SAK_DEMO:-}"
-if [ "${1:-}" = "--demo" ]; then SAK_DEMO=1; fi
+# --update: an existing install gets new images and a restart — no secrets, address or admin
+# steps. Upgrade = `git pull` + `./docker/install.sh --update` (docs/operations.md).
+UPDATE=
+for arg in "$@"; do
+  case "$arg" in
+    --demo) SAK_DEMO=1 ;;
+    --update) UPDATE=1 ;;
+    *) echo "unknown flag: $arg (use --demo or --update)" >&2; exit 2 ;;
+  esac
+done
+if [ -n "$UPDATE" ] && [ ! -f "$ENV_FILE" ]; then
+  echo "No installation here ($ENV_FILE is missing) — run ./docker/install.sh without --update." >&2
+  exit 1
+fi
 if [ -z "$SAK_DEMO" ] && [ -f "$ENV_FILE" ]; then
   SAK_DEMO="$(grep -E '^SAK_DEMO=' "$ENV_FILE" | cut -d= -f2- || true)"
 fi
@@ -40,6 +53,7 @@ say "Downloading images"
 # this, re-running the installer to upgrade on `latest` restarts the old images.
 docker compose $COMPOSE_FILES pull --quiet
 
+if [ -z "$UPDATE" ]; then
 say "1/3 Secrets"
 # Three flags, each measured by a live run on a clean machine (DinD,
 # 2026-09-17):
@@ -54,6 +68,8 @@ say "1/3 Secrets"
 docker compose $COMPOSE_FILES run --rm --no-deps \
   -u "$(id -u):$(id -g)" -v "$PWD:/work" -w /work \
   app node /app/scripts/bootstrap.mjs --from-installer
+
+fi
 
 say "1.5/3 Machine address and image coordinates"
 # ⚠ Detecting the address inside a container is impossible, and that is measured, not inferred:
@@ -103,6 +119,12 @@ docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d --remove-orphans --wa
 docker compose $COMPOSE_FILES --env-file "$ENV_FILE" exec -T -u 0 app \
   chown node:node /backups \
   || echo "⚠ could not fix permissions on /backups — backups will fail with EACCES"
+
+if [ -n "$UPDATE" ]; then
+  say "Updated"
+  echo "Running $(docker compose $COMPOSE_FILES --env-file "$ENV_FILE" exec -T app printenv NUXT_APP_VERSION 2>/dev/null || echo 'unknown version')."
+  exit 0
+fi
 
 say "3/3 First admin"
 # Empty RBAC_ADMIN_* is the default after bootstrap. Then a person creates the admin on
