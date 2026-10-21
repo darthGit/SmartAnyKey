@@ -4,6 +4,36 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] — 2026-10-21
+
+Fixes from installing the public release on a clean machine.
+
+### Added
+
+- Discovery: tick the hosts to add and name them by hand or from a template
+  (`Till {n}` → Till 1, Till 2, …), then add the selected ones in one click.
+- Discovery: hosts that answer with the same SSH host key (machines cloned from
+  one image) are marked, since each can impersonate the other.
+- "Teach the classifier" has its own page in the admin menu, and the scan's
+  "no rule" hint links to it.
+- Devices admin works by site: pick a site once (kept in the address,
+  `?point=<number>`), see its devices with the credential state per protocol,
+  add devices to it; search still finds a device on any site. The site card
+  links to it.
+- The admin menu shows the running version; a newer release shows an
+  "Update available" button with the release notes and the upgrade commands.
+  The server checks GitHub once a day — set `SAK_UPDATE_REPO=` (empty) in
+  `docker/.env` to turn this off.
+
+### Fixed
+
+- A cloned machine was taken for the device it was cloned from and could not be
+  added; a key shared by two scanned hosts no longer identifies either.
+- Back on admin pages returned to the board instead of the previous page.
+- Re-running the installer to upgrade kept the old images: it now pulls them
+  first. Upgrading is `git pull` and re-running `./docker/install.sh`
+  (see docs/operations.md).
+
 ## [0.1.0] — 2026-10-15
 
 First public release.
@@ -30,4 +60,5 @@ First public release.
 - Rate limiting on sign-in and on opening sessions; self-signup disabled.
 - Content-Security-Policy, frame protection, HSTS behind TLS.
 
+[0.1.1]: https://github.com/darthGit/SmartAnyKey/releases/tag/v0.1.1
 [0.1.0]: https://github.com/darthGit/SmartAnyKey/releases/tag/v0.1.0
