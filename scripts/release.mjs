@@ -39,6 +39,9 @@ export function parseArgs(argv) {
 
 /** README and install.sh default to `latest`, so only a stable vX.Y.Z moves it;
  *  a pre-release or a dirty build must never become what a fresh install pulls. */
+// The image bakes its release in (Dockerfile SAK_VERSION → NUXT_APP_VERSION) for the update badge.
+export const buildArgs = tag => ['--build-arg', `SAK_VERSION=${tag}`]
+
 export function tagsFor(tag) {
   return /^v\d+\.\d+\.\d+$/.test(tag) ? [tag, 'latest'] : [tag]
 }
@@ -78,10 +81,10 @@ function build({ image, context, dockerfile, tag, push, multiArch }) {
   if (multiArch) {
     // Multi-platform exists only in a registry, hence always `--push` here
     // (parseArgs already rejects `--multi-arch --no-push`).
-    run('docker', ['buildx', 'build', '--platform', 'linux/amd64,linux/arm64', ...tags, ...df, '--push', context])
+    run('docker', ['buildx', 'build', '--platform', 'linux/amd64,linux/arm64', ...tags, ...df, ...buildArgs(tag), '--push', context])
     return
   }
-  run('docker', ['build', ...tags, ...df, context])
+  run('docker', ['build', ...tags, ...df, ...buildArgs(tag), context])
   if (push) {
     for (const ref of refs)
       run('docker', ['push', ref])

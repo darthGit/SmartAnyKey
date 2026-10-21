@@ -52,4 +52,16 @@ describe('DiscoverHostCard', () => {
     expect(r.find('[data-testid="rogue"]').exists()).toBe(true)
     expect(r.find('[data-testid="type-icon"]').exists()).toBe(false)
   })
+
+  it('AC-3 shared ssh key → a warning that names the other host', async () => {
+    const w = await mountSuspended(DiscoverHostCard, { props: { host: classified, types: [kasa], sharedKeyWith: ['192.168.35.1'] } })
+    const chip = w.find('[data-testid="chip-shared-key"]')
+    expect(chip.exists()).toBe(true)
+    expect(chip.text()).toContain('192.168.35.1')
+  })
+
+  it('no shared key → no warning', async () => {
+    const w = await mountSuspended(DiscoverHostCard, { props: { host: classified, types: [kasa] } })
+    expect(w.find('[data-testid="chip-shared-key"]').exists()).toBe(false)
+  })
 })

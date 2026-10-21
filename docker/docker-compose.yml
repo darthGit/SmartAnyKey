@@ -442,6 +442,9 @@ services:
       # BFF rate limits per minute (server/utils/rate-limit.ts); sign-in itself is limited in Kong.
       SAK_SESSION_OPEN_PER_MIN: ${SAK_SESSION_OPEN_PER_MIN:-30}
       SAK_AUTH_ACTION_PER_MIN: ${SAK_AUTH_ACTION_PER_MIN:-5}
+      # Daily "is a newer release out" check (admin menu badge). `-`, not `:-`: an empty
+      # SAK_UPDATE_REPO in .env switches the outbound request off.
+      NUXT_UPDATE_REPO: ${SAK_UPDATE_REPO-darthGit/SmartAnyKey}
       # Our own server-side client (`server/repositories/supabase-admin.ts`
       # reads `process.env.SUPABASE_URL`) goes the internal way — better
       # than through the published port.

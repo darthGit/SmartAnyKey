@@ -88,5 +88,10 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
 
 # The public address is resolved right before Nitro starts — in compose this is
 # impossible (interpolation happens before containers start, ADR-020).
+# Last, so a new tag rebuilds only this layer. `release.mjs` passes the tag; a plain build
+# says `unknown`, which the update badge never treats as outdated.
+ARG SAK_VERSION=unknown
+ENV NUXT_APP_VERSION=$SAK_VERSION
+
 ENTRYPOINT ["/app/scripts/app-entrypoint.sh"]
 CMD ["node", ".output/server/index.mjs"]

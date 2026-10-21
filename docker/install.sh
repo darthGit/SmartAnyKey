@@ -35,6 +35,11 @@ export SAK_IMAGE SAK_TAG
 
 say() { printf '\n==> %s\n' "$1"; }
 
+say "Downloading images"
+# `up` and `run` never re-pull a tag that exists locally (measured 2026-10-21): without
+# this, re-running the installer to upgrade on `latest` restarts the old images.
+docker compose $COMPOSE_FILES pull --quiet
+
 say "1/3 Secrets"
 # Three flags, each measured by a live run on a clean machine (DinD,
 # 2026-09-17):

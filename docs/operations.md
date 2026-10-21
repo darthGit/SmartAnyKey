@@ -2,9 +2,25 @@
 
 ## Running it
 
-**Upgrade by re-running the installer** with the new tag:
-`SAK_TAG=<new> ./docker/install.sh`. It keeps your `docker/.env` and removes
-containers of services a release no longer ships.
+**Upgrade by re-running the installer** from the new release's `docker/`
+directory — compose files change between releases, so update it first
+(`git pull` in a clone):
+
+```bash
+git pull
+./docker/install.sh                # the tag in docker/.env (latest by default)
+SAK_TAG=v0.2.0 ./docker/install.sh # or move to a specific release
+```
+
+It downloads the new images, keeps your `docker/.env` and removes containers of
+services a release no longer ships.
+
+**Admins see when a release is out.** Once a day (and at start) the server asks
+`api.github.com` for the latest release; the admin menu shows the running version,
+and a newer release adds an "Update available" button with its notes and the
+commands above. This is the only request the app makes to the internet on its own:
+set `SAK_UPDATE_REPO=` (empty) in `docker/.env` and re-run the installer to switch
+it off.
 
 **Your data lives in Docker volumes, not in `docker/`.** The database and stored
 files are the `db-data` and `storage-data` volumes of the `smartanykey` project.

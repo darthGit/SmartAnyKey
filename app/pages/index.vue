@@ -28,6 +28,19 @@ async function loadInboxCount() {
 }
 onMounted(loadInboxCount)
 
+// Running version + the latest release (server checks GitHub daily) — admins only.
+const version = ref<{ current: string, latest: string | null, url: string | null, newer: boolean } | null>(null)
+const updateOpen = ref(false)
+async function loadVersion() {
+  if (!isAdmin.value || !session.value)
+    return
+  try {
+    version.value = await $fetch('/api/admin/version', { headers: { Authorization: `Bearer ${session.value.access_token}` } })
+  }
+  catch { /* non-fatal: no version line, no badge */ }
+}
+onMounted(loadVersion)
+
 const adminMenu = computed(() => [[
   { label: t('rbac.navOnboarding'), icon: 'i-lucide-compass', to: '/admin/onboarding' },
   { label: t('rbac.navInbox'), icon: 'i-lucide-inbox', to: '/admin/discovery-inbox', badge: inboxCount.value || undefined },
@@ -36,12 +49,18 @@ const adminMenu = computed(() => [[
   { label: t('rbac.navCommands'), icon: 'i-lucide-terminal', to: '/admin/commands' },
   { label: t('rbac.navTasks'), icon: 'i-lucide-calendar-clock', to: '/admin/tasks' },
   { label: t('rbac.navRunbooks'), icon: 'i-lucide-book-text', to: '/admin/runbooks' },
+  { label: t('rbac.navTeach'), icon: 'i-lucide-graduation-cap', to: '/admin/teach' },
   { label: t('rbac.navSignatures'), icon: 'i-lucide-sliders-horizontal', to: '/admin/signatures' },
   { label: t('rbac.navDeviceTypes'), icon: 'i-lucide-box', to: '/admin/device-types' },
   { label: t('rbac.navDevices'), icon: 'i-lucide-hard-drive', to: '/admin/devices' },
   { label: t('rbac.navPoints'), icon: 'i-lucide-map-pin', to: '/admin/points' },
   { label: t('rbac.navImport'), icon: 'i-lucide-upload', to: '/admin/import' },
-]])
+], version.value
+  ? [
+      { type: 'label' as const, label: t('update.running', { version: version.value.current }) },
+      ...(version.value.newer ? [{ label: t('update.available', { version: version.value.latest }), icon: 'i-lucide-circle-arrow-up', onSelect: () => { updateOpen.value = true } }] : []),
+    ]
+  : []])
 
 // PostgREST cuts the result at PGRST_DB_MAX_ROWS (self-host = 1000). There are
 // already 2101 devices (300 points × 7) → without paging PC/RPi/MikroTik (sort>40) dropped.
@@ -91,6 +110,7 @@ watch(session, (s, prev) => {
   if (s && !prev) {
     refresh()
     loadInboxCount()
+    loadVersion()
   }
 })
 
@@ -483,6 +503,17 @@ async function signOut() {
           trailing-icon="i-lucide-chevron-down"
         />
       </UDropdownMenu>
+      <UButton
+        v-if="isAdmin && version?.newer"
+        size="xs"
+        color="warning"
+        variant="soft"
+        icon="i-lucide-circle-arrow-up"
+        data-action="update-badge"
+        @click="updateOpen = true"
+      >
+        {{ t('update.available', { version: version.latest }) }}
+      </UButton>
       <USelect
         :model-value="locale"
         :items="localeItems"
@@ -607,6 +638,19 @@ async function signOut() {
       <template #footer>
         <UButton color="neutral" variant="ghost" @click="pendingConfirm = null">{{ t('commands.cancel') }}</UButton>
         <UButton color="primary" @click="execCommand(pendingConfirm!.device, pendingConfirm!.command)">{{ t('commands.run') }}</UButton>
+      </template>
+    </UModal>
+
+    <UModal v-model:open="updateOpen" :title="t('update.title', { version: version?.latest })">
+      <template #body>
+        <div class="flex flex-col gap-3 text-sm" data-testid="update-modal">
+          <p>{{ t('update.current', { version: version?.current }) }}</p>
+          <ULink v-if="version?.url" :to="version.url" target="_blank" class="text-primary underline">{{ t('update.notes') }}</ULink>
+          <p>{{ t('update.how') }}</p>
+          <pre class="rounded bg-elevated p-3 font-mono text-xs">git pull
+SAK_TAG={{ version?.latest }} ./docker/install.sh</pre>
+          <p class="text-muted">{{ t('update.keeps') }}</p>
+        </div>
       </template>
     </UModal>
 

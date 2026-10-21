@@ -42,6 +42,16 @@ describe('install.sh (AC-3)', () => {
     expect(sh()).toMatch(/compose[^\n]*\bup\b[^\n]*--remove-orphans/)
   })
 
+  it('pulls_images_before_using_them', () => {
+    // Measured 2026-10-21: `compose up` keeps a local `:latest` and never re-pulls,
+    // so re-running the installer "upgraded" onto the old images. The pull has to
+    // come before the bootstrap `run`, which already executes the app image.
+    const s = sh()
+    const pull = s.search(/compose[^\n]*\bpull\b/)
+    expect(pull, 'missing docker compose pull').toBeGreaterThan(-1)
+    expect(pull, 'pull must precede the bootstrap run').toBeLessThan(s.search(/compose[^\n]*\brun --rm\b/))
+  })
+
   it('fixes_backup_dir_ownership', () => {
     // Fifth trap, measured 2026-09-21 in a clean room: the image runs as
     // `node` (uid 1000), but the `/backups` mount point is created by docker —

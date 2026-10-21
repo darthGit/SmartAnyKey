@@ -252,7 +252,19 @@ watch(session, (s, prev) => { if (s && !prev) init() }, { immediate: true })
       </div>
     </div>
 
-    <div v-if="point" class="text-xs text-muted font-mono">{{ point.subnet }}</div>
+    <div v-if="point" class="flex items-center gap-2">
+      <span class="text-xs text-muted font-mono">{{ point.subnet }}</span>
+      <UButton
+        v-if="isAdmin"
+        :to="`/admin/devices?point=${point.number}`"
+        size="xs"
+        variant="link"
+        icon="i-lucide-hard-drive"
+        class="ml-auto"
+      >
+        {{ t('board.health.manageDevices') }}
+      </UButton>
+    </div>
 
     <div class="flex flex-col gap-1">
       <div

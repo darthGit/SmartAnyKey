@@ -50,3 +50,48 @@ describe('reconcile (AC-9 identity via a stable signal when the IP changes)', ()
     expect(e).toMatchObject({ status: 'new', deviceId: null })
   })
 })
+
+// 2026-10-21, a developer's test LAN: two POS machines cloned from one image answer
+// with the same ssh-ed25519 key (`ssh-keyscan` 192.168.35.1 / .2). The fingerprint is
+// the MD5 of that real key blob — the form the ssh-hostkey NSE script reports.
+const CLONE_KEY = '2f14c952caf684587fd51270b83e3f4a'
+
+describe('reconcile (a key shared by two scanned hosts identifies nobody)', () => {
+  it('AC-1 two hosts with one ssh key, device on the first IP → first matched, second new', () => {
+    const devices = [dev({ id: 'k1', host: '192.168.35.1', type_id: 'pos', sshHostkey: CLONE_KEY })]
+    const res = reconcile([
+      mo({ ip: '192.168.35.1', sshHostkey: CLONE_KEY }, match('pos')),
+      mo({ ip: '192.168.35.2', sshHostkey: CLONE_KEY }, match('pos')),
+    ], devices)
+    expect(res[0]).toMatchObject({ status: 'matched', deviceId: 'k1' })
+    expect(res[1]).toMatchObject({ status: 'new', deviceId: null })
+  })
+
+  it('AC-1 order does not matter: the clone listed first still does not take the device', () => {
+    const devices = [dev({ id: 'k1', host: '192.168.35.1', type_id: 'pos', sshHostkey: CLONE_KEY })]
+    const res = reconcile([
+      mo({ ip: '192.168.35.2', sshHostkey: CLONE_KEY }, match('pos')),
+      mo({ ip: '192.168.35.1', sshHostkey: CLONE_KEY }, match('pos')),
+    ], devices)
+    expect(res[0]).toMatchObject({ status: 'new', deviceId: null })
+    expect(res[1]).toMatchObject({ status: 'matched', deviceId: 'k1' })
+  })
+
+  it('AC-2 no device is matched to more than one host of a scan', () => {
+    // the same cert on two hosts, the device's own IP absent from the scan
+    const devices = [dev({ id: 'd1', host: '10.0.6.6', tlsCertSha256: CERT })]
+    const res = reconcile([
+      mo({ ip: '10.0.6.201', tlsCertSha256: CERT }, match('pc')),
+      mo({ ip: '10.0.6.202', tlsCertSha256: CERT }, match('pc')),
+    ], devices)
+    const ids = res.flatMap(e => ('deviceId' in e && e.deviceId) ? [e.deviceId] : [])
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(res.filter(e => e.status === 'missing')).toHaveLength(1) // d1 was not seen
+  })
+
+  it('a key unique in the scan still follows an IP move (AC-9 identity kept)', () => {
+    const devices = [dev({ id: 'k1', host: '192.168.35.1', type_id: 'pos', sshHostkey: CLONE_KEY })]
+    const [e] = reconcile([mo({ ip: '192.168.35.9', sshHostkey: CLONE_KEY }, match('pos'))], devices)
+    expect(e).toMatchObject({ status: 'changed', deviceId: 'k1' })
+  })
+})

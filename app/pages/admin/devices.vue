@@ -33,6 +33,7 @@ interface DeviceRow {
 }
 
 // --- server-side device search ------------------------------------------
+const DEVICE_COLS = 'id,type_id,point_id,label,host,actions,default_action,meta,hostname,hostname_source,hostname_at,points(number,address)'
 const results = ref<DeviceRow[]>([])
 const searchTerm = ref('')
 const searchLoading = ref(false)
@@ -56,7 +57,7 @@ async function search(term: string) {
   const clean = term.replace(/[(),]/g, '').trim()
   const like = `%${clean}%`
   const isNum = /^\d+$/.test(clean)
-  const cols = 'id,type_id,point_id,label,host,actions,default_action,meta,hostname,hostname_source,hostname_at,points(number,address)'
+  const cols = DEVICE_COLS
   searchLoading.value = true
   loadErr.value = ''
   try {
@@ -93,12 +94,16 @@ const saveErr = ref('')
 const savedMsg = ref('')
 const delConfirm = ref(false)
 
-const selected = computed(() => results.value.find(d => d.id === selectedId.value) ?? null)
+const selected = computed(() => results.value.find(d => d.id === selectedId.value)
+  ?? pointDevices.value.find(d => d.id === selectedId.value) ?? null)
 watch(selectedId, () => {
   const d = selected.value
   if (!d)
     return
   selectedDevice.value = d // keep the chosen row (survives the results re-filter)
+  // a device found by search moves the page to its point
+  if (d.points && d.point_id !== pagePoint.value?.id)
+    setPagePoint({ id: d.point_id, number: d.points.number, address: d.points.address })
   loadTypes() // the "Type" dropdown for edit (small table → all rows)
   form.typeId = d.type_id
   form.actions = [...d.actions]
@@ -190,6 +195,7 @@ async function save() {
     })
     savedMsg.value = t('devices.saved')
     const id = selectedId.value
+    loadPointDevices()
     await search(searchTerm.value) // re-read the current state
     if (id)
       fetchCredStatus(id) // type/protocols may have changed → refresh the status
@@ -228,6 +234,7 @@ async function del() {
     delConfirm.value = false
     selectedId.value = null
     selectedDevice.value = null
+    loadPointDevices()
     await search(searchTerm.value)
   }
   catch (e) {
@@ -273,9 +280,9 @@ const chosenPoint = ref<PointRow | null>(null)
 const asItem = (p: PointRow) => ({ label: `#${p.number} — ${p.address}`, value: p.id })
 const pointItems = computed(() => {
   const list = pointResults.value.map(asItem)
-  const c = chosenPoint.value
-  if (c && !list.some(i => i.value === c.id))
-    list.unshift(asItem(c))
+  for (const c of [chosenPoint.value, pagePoint.value])
+    if (c && !list.some(i => i.value === c.id))
+      list.unshift(asItem(c))
   return list
 })
 
@@ -285,7 +292,13 @@ async function loadTypes() {
   const { data } = await supabase.from('device_types').select('id,name').order('sort')
   types.value = (data ?? []).map((r: { id: string, name: string }) => ({ label: r.name, value: r.id }))
 }
-watch(addOpen, open => open && loadTypes())
+watch(addOpen, (open) => {
+  if (!open)
+    return
+  loadTypes()
+  if (!addForm.pointId && pagePoint.value)
+    addForm.pointId = pagePoint.value.id // the page's point; the field still lets you change it
+})
 
 async function searchPoints(term: string) {
   const clean = term.replace(/[(),]/g, '').trim()
@@ -354,7 +367,8 @@ async function create() {
       },
     })
     addMsg.value = t('devices.addSuccess') // hint "next, bind a cred"
-    Object.assign(addForm, { pointId: null, typeId: null, actions: [], label: '', host: '', defaultAction: 'auto' })
+    Object.assign(addForm, { pointId: pagePoint.value?.id ?? null, typeId: null, actions: [], label: '', host: '', defaultAction: 'auto' })
+    loadPointDevices()
     chosenPoint.value = null
     pointSearchTerm.value = ''
   }
@@ -362,6 +376,68 @@ async function create() {
     addErr.value = t('devices.addError', { message: (e as Error).message })
   }
 }
+
+// --- the page's point -----------------------------------------------------
+// The point is the context of the page: picked once, it lists its devices and feeds Add.
+// It lives in `?point=<number>` (a number a person reads and shares, not a uuid), so reload
+// and Back keep it.
+const route = useRoute()
+const router = useRouter()
+const pagePoint = ref<PointRow | null>(null)
+const pagePointTerm = ref('')
+const pointNotFound = ref<number | null>(null)
+const pagePointId = computed({
+  get: () => pagePoint.value?.id ?? null,
+  set: (id: string | null) => {
+    const p = pointResults.value.find(x => x.id === id)
+    if (p)
+      setPagePoint(p)
+  },
+})
+let pagePointTimer: ReturnType<typeof setTimeout>
+watch(pagePointTerm, (term) => {
+  clearTimeout(pagePointTimer)
+  pagePointTimer = setTimeout(() => searchPoints(term), 250)
+})
+
+const pointDevices = ref<DeviceRow[]>([])
+const rowCreds = ref<Record<string, Record<string, boolean>>>({})
+const typeName = (id: string) => types.value.find(ty => ty.value === id)?.label ?? ''
+
+function setPagePoint(p: PointRow) {
+  pagePoint.value = p
+  pointNotFound.value = null
+  if (route.query.point !== String(p.number))
+    router.replace({ query: { ...route.query, point: String(p.number) } })
+  loadPointDevices()
+}
+
+async function loadPointDevices() {
+  const p = pagePoint.value
+  if (!p)
+    return
+  loadTypes()
+  const { data } = await supabase.from('devices').select(DEVICE_COLS).eq('point_id', p.id).order('sort')
+  pointDevices.value = (data ?? []) as DeviceRow[]
+  // ponytail: one cred-status call per device (≈7 on a point); a batch route once points hold dozens.
+  const entries = await Promise.all(pointDevices.value.map(async (d) => {
+    const rows = await $fetch<{ action: string, resolved: boolean }[]>(`/api/admin/devices/${d.id}/cred-status`, { headers: authHeaders.value })
+      .catch(() => [])
+    return [d.id, Object.fromEntries(rows.map(r => [r.action, r.resolved]))] as const
+  }))
+  rowCreds.value = Object.fromEntries(entries)
+}
+
+onMounted(async () => {
+  const n = Number(route.query.point)
+  if (!route.query.point || !Number.isInteger(n))
+    return
+  const { data } = await supabase.from('points').select('id,number,address').eq('number', n).maybeSingle()
+  if (data)
+    setPagePoint(data as PointRow)
+  else
+    pointNotFound.value = n
+})
 </script>
 
 <template>
@@ -370,7 +446,63 @@ async function create() {
 
     <UAlert v-if="loadErr" color="error" :description="loadErr" />
 
-    <UFormField :label="t('devices.search')">
+    <UFormField :label="t('devices.pagePoint')">
+      <USelectMenu
+        v-model="pagePointId"
+        v-model:search-term="pagePointTerm"
+        :items="pointItems"
+        value-key="value"
+        :ignore-filter="true"
+        :loading="pointLoading"
+        :placeholder="t('devices.pagePointPlaceholder')"
+        class="w-full"
+        data-testid="page-point"
+      />
+    </UFormField>
+    <UAlert v-if="pointNotFound" color="warning" :description="t('devices.pointNotFound', { number: pointNotFound })" />
+
+    <section v-if="pagePoint" class="flex flex-col gap-2">
+      <div class="flex items-center gap-2">
+        <h2 class="text-sm font-semibold text-highlighted">{{ t('devices.pointDevices', { number: pagePoint.number, address: pagePoint.address }) }}</h2>
+        <UButton size="xs" variant="soft" icon="i-lucide-plus" class="ml-auto" data-action="add-device" @click="addOpen = true">
+          {{ t('devices.addToggle') }}
+        </UButton>
+      </div>
+      <p v-if="!pointDevices.length" class="text-sm text-muted">{{ t('devices.pointEmpty') }}</p>
+      <ul v-else class="divide-y divide-default rounded-lg ring ring-default">
+        <li v-for="d in pointDevices" :key="d.id">
+          <button
+            type="button"
+            class="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left hover:bg-elevated"
+            :class="d.id === selectedId ? 'bg-elevated' : ''"
+            data-testid="point-device-row"
+            @click="selectedId = d.id"
+          >
+            <span class="font-medium text-highlighted" data-testid="row-label">{{ d.label }}</span>
+            <span class="font-mono text-xs text-muted">{{ d.host }}</span>
+            <span class="text-xs text-muted">{{ typeName(d.type_id) }}</span>
+            <span class="ml-auto flex flex-wrap gap-1">
+              <template v-for="a in d.actions" :key="a">
+                <UBadge v-if="a === 'web'" size="xs" variant="subtle" color="neutral">{{ t(`action.${a}`) }}</UBadge>
+                <UBadge
+                  v-else
+                  size="xs"
+                  variant="subtle"
+                  :color="rowCreds[d.id]?.[a] ? 'success' : 'warning'"
+                  :title="rowCreds[d.id]?.[a] ? t('devices.credSet') : t('devices.credMissing')"
+                  :data-testid="`cred-${a}`"
+                >
+                  <UIcon :name="rowCreds[d.id]?.[a] ? 'i-lucide-key-round' : 'i-lucide-key-square'" />
+                  {{ t(`action.${a}`) }}
+                </UBadge>
+              </template>
+            </span>
+          </button>
+        </li>
+      </ul>
+    </section>
+
+    <UFormField :label="t('devices.search')" :description="t('devices.searchAnyHint')">
       <USelectMenu
         v-model="selectedId"
         v-model:search-term="searchTerm"
@@ -384,10 +516,10 @@ async function create() {
     </UFormField>
 
     <p v-if="!selectedId" class="text-sm text-muted">
-      {{ t('devices.empty') }}
+      {{ pagePoint ? t('devices.emptyWithPoint') : t('devices.empty') }}
     </p>
 
-    <section v-else class="flex flex-col gap-4 p-4 rounded-lg border border-default bg-muted">
+    <section v-else class="flex flex-col gap-4 p-4 rounded-lg border border-default bg-muted" data-testid="edit-form">
       <UFormField :label="t('devices.addType')" required>
         <USelect v-model="form.typeId" :items="types" value-key="value" class="w-full" />
       </UFormField>
@@ -507,6 +639,7 @@ async function create() {
 
     <section class="flex flex-col gap-4">
       <UButton
+        v-if="!pagePoint || addOpen"
         :icon="addOpen ? 'i-lucide-chevron-down' : 'i-lucide-plus'"
         variant="soft"
         class="self-start"
@@ -515,7 +648,7 @@ async function create() {
         {{ t('devices.addToggle') }}
       </UButton>
 
-      <div v-if="addOpen" class="flex flex-col gap-4 p-4 rounded-lg border border-default bg-muted">
+      <div v-if="addOpen" class="flex flex-col gap-4 p-4 rounded-lg border border-default bg-muted" data-testid="add-form">
         <UFormField :label="t('devices.addPoint')" required>
           <USelectMenu
             v-model="addForm.pointId"

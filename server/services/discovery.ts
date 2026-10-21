@@ -287,23 +287,42 @@ export type DiffEntry =
   | { status: 'missing', device: KnownDevice }
 
 // An observation resolves to a device by a stable signal (hostkey/cert/hostname) —
-// even if the IP changed; an IP match is only a fallback.
-function findDevice(obs: Observation, devices: KnownDevice[]): KnownDevice | undefined {
-  return devices.find(d =>
-    (d.sshHostkey && d.sshHostkey === obs.sshHostkey)
-    || (d.tlsCertSha256 && d.tlsCertSha256 === obs.tlsCertSha256)
-    || (d.hostname && obs.hostname && d.hostname === obs.hostname))
-    ?? devices.find(d => d.host === obs.ip)
+// even if the IP changed; an IP match is only a fallback. A signal two hosts of the
+// scan share (machines cloned from one image) identifies neither: it falls to the IP.
+function signals(o: { sshHostkey?: string | null, tlsCertSha256?: string | null, hostname?: string | null }): string[] {
+  return [o.sshHostkey && `k:${o.sshHostkey}`, o.tlsCertSha256 && `c:${o.tlsCertSha256}`, o.hostname && `h:${o.hostname}`]
+    .filter((x): x is string => !!x)
 }
 
 // Each host → New/Matched/Changed/Rogue; devices without a host → Missing.
+// Two passes so the order of hosts does not decide: stable signals first, then IP;
+// a device is taken by at most one host.
 export function reconcile(observed: MatchedObs[], devices: KnownDevice[]): DiffEntry[] {
-  const out: DiffEntry[] = []
+  const count = new Map<string, number>()
+  for (const { obs } of observed)
+    for (const s of signals(obs)) count.set(s, (count.get(s) ?? 0) + 1)
   const seen = new Set<string>()
-  for (const { obs, match } of observed) {
-    const dev = findDevice(obs, devices)
+  const owner = new Map<MatchedObs, KnownDevice>()
+  const claim = (m: MatchedObs, pick: (d: KnownDevice) => boolean) => {
+    const dev = devices.find(d => !seen.has(d.id) && pick(d))
     if (dev) {
       seen.add(dev.id)
+      owner.set(m, dev)
+    }
+  }
+  for (const m of observed) {
+    const unique = new Set(signals(m.obs).filter(s => count.get(s) === 1))
+    claim(m, d => signals(d).some(s => unique.has(s)))
+  }
+  for (const m of observed)
+    if (!owner.has(m))
+      claim(m, d => d.host === m.obs.ip)
+
+  const out: DiffEntry[] = []
+  for (const m of observed) {
+    const { obs, match } = m
+    const dev = owner.get(m)
+    if (dev) {
       // Changed: the IP moved or the proposed type differs from the current one
       const changed = dev.host !== obs.ip || (match != null && match.proposedTypeId !== dev.type_id)
       out.push({ status: changed ? 'changed' : 'matched', obs, match, deviceId: dev.id, hostnameChanged: changesHostname(dev, obs) })

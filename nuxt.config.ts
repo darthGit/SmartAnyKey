@@ -7,7 +7,7 @@ export default defineNuxtConfig({
     // ADR-007 ws (SSH/guac) + ADR-015 scheduled tasks (drift rescan):
     // per-point cadence picked up every minute.
     experimental: { websocket: true, tasks: true },
-    scheduledTasks: { '* * * * *': ['discovery:rescan', 'tasks:tick'] },
+    scheduledTasks: { '* * * * *': ['discovery:rescan', 'tasks:tick'], '17 4 * * *': ['update:check'] },
   },
   // ADR-010: pre-bundle guacamole-common-js so Vite does not discover it
   // on the fly mid dev session (re-optimize + reload crashed dev with an unhandled
@@ -91,6 +91,12 @@ export default defineNuxtConfig({
     // installation has is its property, not our knowledge. Adding `python313`/`ansible`
     // = a line here, no code or migration change. NUXT_TASK_RUNNERS
     taskRunners: '',
+    // The running version: the image bakes the release tag in (Dockerfile SAK_VERSION →
+    // NUXT_APP_VERSION); a host-side `pnpm dev` stays `dev`, which never counts as outdated.
+    appVersion: 'dev',
+    // owner/repo whose latest GitHub release is checked daily. Empty = no outbound request at
+    // all (closed networks). The default lives in compose, not here. NUXT_UPDATE_REPO
+    updateRepo: '',
     public: {
       // How many trailing phone digits count as a match
       // (so +380671234567 and 0671234567 find the same point).

@@ -1,9 +1,10 @@
 // Checks the `scripts/release.mjs` parser — branchy logic, so it leaves one
 // runnable check behind. It does NOT prove the release itself: that is a live run
 // (both images built/pushed).
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error — .mjs script without types
-import { parseArgs, tagsFor } from '../../scripts/release.mjs'
+import { buildArgs, parseArgs, tagsFor } from '../../scripts/release.mjs'
 
 describe('release argv', () => {
   it('tag is the first non-flag, push is the default', () => {
@@ -40,3 +41,17 @@ describe('release tags', () => {
     expect(tagsFor('abc1234')).toEqual(['abc1234'])
   })
 })
+
+// The image must know its own release, or the admin menu cannot say "a newer one is out".
+describe('release version in the image', () => {
+  it('passes the tag as SAK_VERSION', () => {
+    expect(buildArgs('v0.1.1')).toEqual(['--build-arg', 'SAK_VERSION=v0.1.1'])
+  })
+
+  it('the Dockerfile turns it into the app version', () => {
+    const df = readFileSync('Dockerfile', 'utf8')
+    expect(df).toMatch(/ARG SAK_VERSION=unknown/)
+    expect(df).toMatch(/ENV NUXT_APP_VERSION=\$SAK_VERSION/)
+  })
+})
+

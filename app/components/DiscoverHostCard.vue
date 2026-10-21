@@ -7,7 +7,9 @@
 // in the parent (confirm in the drawer, use-sample in teach). ADR-012/004/006.
 import type { DeviceType, DiscoveredHost, ReconcileStatus } from '~/types/board'
 
-const props = defineProps<{ host: DiscoveredHost, types: DeviceType[] }>()
+// sharedKeyWith: other hosts of the scan with the same ssh key — clones of one image
+// can impersonate each other, and reconcile does not identify them by that key.
+const props = defineProps<{ host: DiscoveredHost, types: DeviceType[], sharedKeyWith?: string[] }>()
 
 const { t } = useI18n()
 
@@ -54,6 +56,19 @@ const STATUS_COLOR: Record<ReconcileStatus, 'info' | 'success' | 'warning' | 'er
         {{ host.nse_hostname }}
       </UBadge>
     </div>
+
+    <UBadge
+      v-if="sharedKeyWith?.length"
+      data-testid="chip-shared-key"
+      size="xs"
+      color="warning"
+      variant="subtle"
+      icon="i-lucide-key-round"
+      class="self-start"
+      :title="t('discovery.sharedKeyHint')"
+    >
+      {{ t('discovery.sharedKey', { ips: sharedKeyWith.join(', ') }) }}
+    </UBadge>
 
     <!-- chips: status · confidence · ports · os -->
     <div class="flex flex-wrap items-center gap-1.5">

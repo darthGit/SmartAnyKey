@@ -7,6 +7,7 @@
 // ponytail: rogue is only marked in the drawer for now; a separate audit/timeline of
 //           the point is the next step (drift-inbox), the seam in reconcile_status exists.
 import type { DeviceType, DiscoveredHost, DiscoveryDiff, Point } from '~/types/board'
+import { fillNames } from '~/utils/nameTemplate'
 
 const props = defineProps<{ point: Point | null, open: boolean, types: DeviceType[] }>()
 const emit = defineEmits<{ 'update:open': [boolean], 'confirmed': [], 'scheduled': [] }>()
@@ -151,24 +152,61 @@ const newHosts = computed(() => diff.value?.hosts.filter(h => h.reconcile_status
 // matched no rule (rogue) → hint to add/refine rules
 const unclassifiedCount = computed(() => diff.value?.hosts.filter(h => h.reconcile_status === 'rogue').length ?? 0)
 
+// Hosts of the scan that answer with the same ssh key (clones of one image) — the card
+// warns; reconcile already refuses to identify them by that key.
+const sharedKeyWith = computed(() => {
+  const byKey = new Map<string, string[]>()
+  for (const h of diff.value?.hosts ?? [])
+    if (h.ssh_hostkey)
+      byKey.set(h.ssh_hostkey, [...(byKey.get(h.ssh_hostkey) ?? []), h.ip])
+  return (h: DiscoveredHost) => (h.ssh_hostkey ? (byKey.get(h.ssh_hostkey) ?? []).filter(ip => ip !== h.ip) : [])
+})
+
+// Selection + names for the bulk add. Every classified New host starts selected with its
+// observed name; the admin unticks, types names, or fills them from a template.
+const selected = ref<string[]>([])
+const names = ref<Record<string, string>>({})
+const edited = ref(new Set<string>())
+const nameTemplate = ref('')
+watch(newHosts, (list) => {
+  selected.value = list.map(h => h.id)
+  names.value = Object.fromEntries(list.map(h => [h.id, h.hostname || h.ip]))
+  edited.value = new Set()
+}, { immediate: true })
+const allSelected = computed(() => newHosts.value.length > 0 && selected.value.length === newHosts.value.length)
+function toggleAll() {
+  selected.value = allSelected.value ? [] : newHosts.value.map(h => h.id)
+}
+function toggle(id: string) {
+  selected.value = selected.value.includes(id) ? selected.value.filter(x => x !== id) : [...selected.value, id]
+}
+function setName(id: string, v: string) {
+  names.value = { ...names.value, [id]: v }
+  edited.value = new Set(edited.value).add(id)
+}
+function applyTemplate() {
+  if (nameTemplate.value.trim())
+    names.value = fillNames(nameTemplate.value.trim(), selected.value, names.value, edited.value)
+}
+
 const bulkBusy = ref(false)
 const bulkResult = ref('')
 
-// Bulk "Add all matched" — removes the chore of N clicks (give a naive
+// Bulk add of the selected hosts — removes the chore of N clicks (give a naive
 // user a bulk action). Propose-don't-write stays: a human clicks once.
 // ponytail: a sequential loop — a point has dozens of hosts; a batch endpoint if needed.
-async function addAllNew() {
+async function addSelected() {
   if (!props.point)
     return
   bulkBusy.value = true
   bulkResult.value = ''
   let ok = 0
   let fail = 0
-  for (const h of newHosts.value) {
+  for (const h of newHosts.value.filter(h => selected.value.includes(h.id))) {
     try {
       await $fetch(`/api/discovery/${props.point.id}/confirm`, {
         method: 'POST', headers: headers.value,
-        body: { ip: h.ip, typeId: h.proposed_type_id!, label: h.hostname || h.ip },
+        body: { ip: h.ip, typeId: h.proposed_type_id!, label: names.value[h.id]?.trim() || h.hostname || h.ip },
       })
       ok++
     }
@@ -267,14 +305,25 @@ async function submitConfirm(h: DiscoveredHost) {
 
         <!-- bulk action + hints (to make the flow intuitive) -->
         <div v-if="diff.hosts.length" class="mb-3 flex flex-col gap-2">
-          <div v-if="newHosts.length" class="flex flex-wrap items-center gap-2 rounded bg-elevated p-2">
-            <UButton size="sm" color="primary" icon="i-lucide-plus" :loading="bulkBusy" @click="addAllNew">
-              {{ t('discovery.addAll', { count: newHosts.length }) }}
-            </UButton>
-            <span v-if="bulkResult" class="text-xs text-muted">{{ bulkResult }}</span>
+          <div v-if="newHosts.length" class="flex flex-col gap-2 rounded bg-elevated p-2">
+            <p class="text-xs text-muted">{{ t('discovery.selectHint') }}</p>
+            <div class="flex flex-wrap items-center gap-2">
+              <UCheckbox :model-value="allSelected" :label="t('discovery.selectAll')" data-action="select-all" @update:model-value="toggleAll" />
+              <UInput v-model="nameTemplate" size="sm" class="min-w-40 flex-1" :placeholder="t('discovery.templatePlaceholder')" data-testid="name-template" @keydown.enter="applyTemplate" />
+              <UButton size="sm" variant="soft" color="neutral" :disabled="!nameTemplate.trim() || !selected.length" data-action="apply-template" @click="applyTemplate">
+                {{ t('discovery.templateApply') }}
+              </UButton>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <UButton size="sm" color="primary" icon="i-lucide-plus" :loading="bulkBusy" :disabled="!selected.length" data-action="add-selected" @click="addSelected">
+                {{ t('discovery.addAll', { count: selected.length }) }}
+              </UButton>
+              <span v-if="bulkResult" class="text-xs text-muted">{{ bulkResult }}</span>
+            </div>
           </div>
           <p v-if="unclassifiedCount" class="text-xs text-muted">
             {{ t('discovery.unclassifiedHint', { count: unclassifiedCount }) }}
+            <UButton to="/admin/teach" variant="link" size="xs" class="px-1" data-action="teach-link">{{ t('discovery.teach') }}</UButton>
             <UButton to="/admin/signatures" variant="link" size="xs" class="px-1">{{ t('discovery.editRules') }}</UButton>
           </p>
         </div>
@@ -285,7 +334,25 @@ async function submitConfirm(h: DiscoveredHost) {
         <ul class="divide-y divide-default rounded ring ring-default">
           <li v-for="h in sortedHosts" :key="h.id" class="p-3">
             <div class="flex items-start gap-2">
-              <DiscoverHostCard :host="h" :types="types" class="flex-1" />
+              <UCheckbox
+                v-if="h.reconcile_status === 'new' && h.proposed_type_id"
+                :model-value="selected.includes(h.id)"
+                :aria-label="h.ip"
+                class="mt-0.5"
+                data-action="select-host"
+                @update:model-value="toggle(h.id)"
+              />
+              <div class="flex min-w-0 flex-1 flex-col gap-1.5">
+                <DiscoverHostCard :host="h" :types="types" :shared-key-with="sharedKeyWith(h)" />
+                <UInput
+                  v-if="h.reconcile_status === 'new' && h.proposed_type_id && selected.includes(h.id)"
+                  :model-value="names[h.id] ?? ''"
+                  size="sm"
+                  :placeholder="t('discovery.label')"
+                  data-testid="host-name"
+                  @update:model-value="setName(h.id, String($event))"
+                />
+              </div>
               <UButton
                 v-if="h.reconcile_status === 'new'"
                 size="xs"
