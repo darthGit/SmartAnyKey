@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] — 2026-10-22
+
+### Added
+
+- Discovery and Teach the classifier show scan progress while a scan runs:
+  the stage and nmap's own progress, e.g. "Finding hosts · Ping Scan 66%",
+  then "Scanning services · Service scan 42%".
+- Device types carry a set of protocols (VNC, RDP, SSH, web). New devices of
+  the type get all of them — from discovery, import or manual add, where
+  picking the type ticks them and you can untick for one device.
+- "Apply to devices" on a device type adds its protocols to the existing
+  devices that miss them, after a confirmation that shows how many. It only
+  adds; protocols set by hand on a device stay.
+- The device type list shows each type's protocols and sort order.
+
+### Fixed
+
+- Discovery missed hosts that drop ICMP and have ports 80/443 filtered (e.g. a
+  Windows machine with 135/445/3306/5900 open): the same hosts were missing
+  from classification and from Teach the classifier. Hosts are now detected by
+  a TCP connect to the scanned ports, and the service scan no longer drops them
+  again.
+- An SSH session drew full-screen programs (e.g. `mc`) in an 80×24 box: the
+  terminal size sent while the session was connecting was lost. The terminal
+  now gets the size of its pane.
+
 ## [0.2.0] — 2026-10-22
 
 ### Added
@@ -93,6 +119,7 @@ First public release.
 - Rate limiting on sign-in and on opening sessions; self-signup disabled.
 - Content-Security-Policy, frame protection, HSTS behind TLS.
 
+[0.3.0]: https://github.com/darthGit/SmartAnyKey/releases/tag/v0.3.0
 [0.2.0]: https://github.com/darthGit/SmartAnyKey/releases/tag/v0.2.0
 [0.1.2]: https://github.com/darthGit/SmartAnyKey/releases/tag/v0.1.2
 [0.1.1]: https://github.com/darthGit/SmartAnyKey/releases/tag/v0.1.1
