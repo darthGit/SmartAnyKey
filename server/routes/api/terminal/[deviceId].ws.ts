@@ -21,7 +21,11 @@ import {
 import type { SshBridge } from '../../../services/ssh-bridge'
 
 const idSchema = z.string().uuid()
+const sizeSchema = z.object({ cols: z.number().int().min(1).max(1000), rows: z.number().int().min(1).max(1000) })
 const bridges = new WeakMap<object, SshBridge>()
+// The client sends its pane size right at ws open, while open() is still authorising and
+// connecting — that resize used to be dropped and the PTY stayed 80×24. Keep the last one.
+const pendingSize = new WeakMap<object, z.infer<typeof sizeSchema>>()
 
 function fail(peer: { send: (d: string) => void, close: (code?: number, reason?: string) => void }, code: string) {
   peer.send(JSON.stringify({ type: 'error', code }))
@@ -72,6 +76,10 @@ export default defineWebSocketHandler({
         onClose: () => peer.close(),
       })
       bridges.set(peer, bridge)
+      const size = pendingSize.get(peer)
+      if (size)
+        bridge.resize(size.cols, size.rows)
+      pendingSize.delete(peer)
     }
     catch (err) {
       if (err instanceof UpgradeUnauthorizedError) {
@@ -87,9 +95,6 @@ export default defineWebSocketHandler({
   },
 
   message(peer, message) {
-    const bridge = bridges.get(peer)
-    if (!bridge)
-      return
     let msg: { type?: string, data?: string, cols?: number, rows?: number }
     try {
       msg = JSON.parse(message.text())
@@ -97,10 +102,18 @@ export default defineWebSocketHandler({
     catch {
       return
     }
-    if (msg.type === 'input' && typeof msg.data === 'string')
+    const bridge = bridges.get(peer)
+    if (msg.type === 'resize') {
+      const size = sizeSchema.safeParse(msg)
+      if (!size.success)
+        return
+      if (bridge)
+        bridge.resize(size.data.cols, size.data.rows)
+      else
+        pendingSize.set(peer, size.data)
+    }
+    else if (bridge && msg.type === 'input' && typeof msg.data === 'string')
       bridge.write(msg.data)
-    else if (msg.type === 'resize' && msg.cols && msg.rows)
-      bridge.resize(msg.cols, msg.rows)
   },
 
   close(peer) {
