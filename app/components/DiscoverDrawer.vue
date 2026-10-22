@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Auto-discovery diff drawer (ADR-012). Opening on a point →
-// POST scan (task_run kind=discovery-scan) → poll the row (RLS actor=self, like
+// Auto-discovery diff drawer (ADR-012). Opening on a point → reattach to its running
+// scan, else POST scan (task_run kind=discovery-scan) → poll the row (RLS actor=self, like
 // ssh-commands — NOT realtime) → GET hosts → diff New/Matched/Changed/Rogue +
 // Missing. New → confirm into a device (the single writer). Rogue is a visible flag
 // (persistent point timeline — deferred, "later").
@@ -82,73 +82,113 @@ async function loadPortSigFlag() {
 // missing rows have no host card (a device without an observation) → own badge.
 const MISSING_COLOR = 'neutral' as const
 
-async function pollRun(id: string) {
-  // phase-gated: Stop sets phase→idle and the loop exits (the server scan
-  // finishes detached, last-writer-wins — an accepted ceiling).
-  for (let i = 0; i < 1000 && phase.value === 'scanning'; i++) {
-    const { data } = await supabase.from('task_run').select('status,error').eq('id', id).maybeSingle()
-    if (data?.status === 'done') {
-      diff.value = await $fetch<DiscoveryDiff>(`/api/discovery/${props.point!.id}/hosts`, { headers: headers.value })
-      phase.value = 'done'
-      return
+// The point phase/diff belong to and the run being polled. Closing the drawer does NOT
+// stop the poll — the scan is a background task_run; reopening shows it again.
+const scanPointId = ref<string | null>(null)
+const activeRun = ref<string | null>(null)
+
+function fail(e: unknown) {
+  errorMsg.value = (e as { data?: { statusMessage?: string } }).data?.statusMessage ?? (e as Error).message
+  phase.value = 'failed'
+}
+
+async function pollRun(id: string, pointId: string) {
+  // run-gated: Stop or another point clears activeRun and the loop exits (the server
+  // scan finishes detached, last-writer-wins — an accepted ceiling).
+  activeRun.value = id
+  try {
+    for (let i = 0; i < 1000 && activeRun.value === id; i++) {
+      const { data } = await supabase.from('task_run').select('status,error').eq('id', id).maybeSingle()
+      if (activeRun.value !== id)
+        return
+      if (data?.status === 'done') {
+        diff.value = await $fetch<DiscoveryDiff>(`/api/discovery/${pointId}/hosts`, { headers: headers.value })
+        phase.value = 'done'
+        return
+      }
+      if (data?.status === 'failed') {
+        errorMsg.value = data.error ?? 'error'
+        phase.value = 'failed'
+        return
+      }
+      await new Promise(r => setTimeout(r, 800))
     }
-    if (data?.status === 'failed') {
-      errorMsg.value = data.error ?? 'error'
-      phase.value = 'failed'
-      return
-    }
-    await new Promise(r => setTimeout(r, 800))
   }
+  catch (e) {
+    if (activeRun.value === id)
+      fail(e)
+  }
+}
+
+function resetForScan(pointId: string) {
+  scanPointId.value = pointId
+  activeRun.value = null
+  phase.value = 'scanning'
+  errorMsg.value = ''
+  diff.value = null
 }
 
 async function startScan() {
   if (!props.point)
     return
-  phase.value = 'scanning'
-  errorMsg.value = ''
-  diff.value = null
-  confirming.value = null
+  const pointId = props.point.id
+  resetForScan(pointId)
   try {
-    const { executionId } = await $fetch<{ executionId: string }>(`/api/discovery/${props.point.id}/scan`, {
+    const { executionId } = await $fetch<{ executionId: string }>(`/api/discovery/${pointId}/scan`, {
       method: 'POST',
       headers: headers.value,
       body: { mode: scanMode.value, customPorts: scanMode.value === 'custom' ? customPorts.value.trim() : undefined },
     })
-    await pollRun(executionId)
+    if (scanPointId.value === pointId && phase.value === 'scanning')
+      await pollRun(executionId, pointId)
   }
   catch (e) {
-    errorMsg.value = (e as { data?: { statusMessage?: string } }).data?.statusMessage ?? (e as Error).message
-    phase.value = 'failed'
+    if (scanPointId.value === pointId)
+      fail(e)
   }
 }
 
 // Stop: aborts waiting for the scan → idle; the selector becomes active,
 // the admin starts again with another template via the Scan button.
 function stopScan() {
+  activeRun.value = null
   phase.value = 'idle'
 }
 
-watch(() => [props.open, props.point?.id], () => {
-  if (props.open && props.point && phase.value === 'idle') {
+watch(() => [props.open, props.point?.id], async () => {
+  if (!props.open || !props.point)
+    return
+  const pointId = props.point.id
+  // same point, scan still polling or its result kept → just show it
+  if (scanPointId.value === pointId && phase.value !== 'idle')
+    return
+  resetForScan(pointId)
+  void loadPortSigFlag()
+  // a scan of this point already running (drawer closed, page reloaded, another admin) → reattach
+  const { data } = await supabase.from('task_run').select('id')
+    .eq('kind', 'discovery-scan').eq('ref_id', pointId).eq('status', 'running')
+    .order('started_at', { ascending: false }).limit(1).maybeSingle()
+  if (scanPointId.value !== pointId || phase.value !== 'scanning')
+    return
+  if (data) {
+    await pollRun(data.id, pointId)
+  }
+  else {
     scanMode.value = 'combined' // auto-scan on open — always combined
-    void loadPortSigFlag()
     startScan()
   }
-  if (!props.open)
-    phase.value = 'idle'
 })
 
 // --- confirm New → device ------------------------------------------------
-const confirming = ref<{ hostId: string, typeId: string, label: string } | null>(null)
-const confirmErr = ref('')
 const typeItems = computed(() => props.types.map(ty => ({ label: ty.name, value: ty.id })))
 
 // host list sorted by confidence ↓ (higher % on top; without % —
 // rogue/unknown — at the bottom). Copy before sort (do not mutate the reactive array).
 const sortedHosts = computed(() => [...(diff.value?.hosts ?? [])].sort((a, b) => (b.confidence ?? -1) - (a.confidence ?? -1)))
 
-// classified New hosts (have a proposed type) — candidates for bulk add
-const newHosts = computed(() => diff.value?.hosts.filter(h => h.reconcile_status === 'new' && h.proposed_type_id) ?? [])
+// New hosts + rogue (no rule matched) — candidates for the add; the admin may know what a
+// rogue is or overrule the classifier, so the type is per host and editable.
+const newHosts = computed(() => diff.value?.hosts.filter(h => h.reconcile_status === 'new' || h.reconcile_status === 'rogue') ?? [])
 // matched no rule (rogue) → hint to add/refine rules
 const unclassifiedCount = computed(() => diff.value?.hosts.filter(h => h.reconcile_status === 'rogue').length ?? 0)
 
@@ -162,15 +202,18 @@ const sharedKeyWith = computed(() => {
   return (h: DiscoveredHost) => (h.ssh_hostkey ? (byKey.get(h.ssh_hostkey) ?? []).filter(ip => ip !== h.ip) : [])
 })
 
-// Selection + names for the bulk add. Every classified New host starts selected with its
-// observed name; the admin unticks, types names, or fills them from a template.
+// Selection + names + types for the add. Every classified host starts selected with its
+// observed name and proposed type; an unclassified one starts unticked with no type (never
+// added under some type by accident). The admin unticks, renames, retypes, or uses a template.
 const selected = ref<string[]>([])
 const names = ref<Record<string, string>>({})
+const hostTypes = ref<Record<string, string>>({})
 const edited = ref(new Set<string>())
 const nameTemplate = ref('')
 watch(newHosts, (list) => {
-  selected.value = list.map(h => h.id)
+  selected.value = list.filter(h => h.proposed_type_id).map(h => h.id)
   names.value = Object.fromEntries(list.map(h => [h.id, h.hostname || h.ip]))
+  hostTypes.value = Object.fromEntries(list.map(h => [h.id, h.proposed_type_id ?? '']))
   edited.value = new Set()
 }, { immediate: true })
 const allSelected = computed(() => newHosts.value.length > 0 && selected.value.length === newHosts.value.length)
@@ -184,6 +227,7 @@ function setName(id: string, v: string) {
   names.value = { ...names.value, [id]: v }
   edited.value = new Set(edited.value).add(id)
 }
+const missingType = computed(() => selected.value.some(id => !hostTypes.value[id]))
 function applyTemplate() {
   if (nameTemplate.value.trim())
     names.value = fillNames(nameTemplate.value.trim(), selected.value, names.value, edited.value)
@@ -206,7 +250,7 @@ async function addSelected() {
     try {
       await $fetch(`/api/discovery/${props.point.id}/confirm`, {
         method: 'POST', headers: headers.value,
-        body: { ip: h.ip, typeId: h.proposed_type_id!, label: names.value[h.id]?.trim() || h.hostname || h.ip },
+        body: { ip: h.ip, typeId: hostTypes.value[h.id]!, label: names.value[h.id]?.trim() || h.hostname || h.ip },
       })
       ok++
     }
@@ -216,33 +260,6 @@ async function addSelected() {
   emit('confirmed')
   diff.value = await $fetch<DiscoveryDiff>(`/api/discovery/${props.point.id}/hosts`, { headers: headers.value })
   bulkBusy.value = false
-}
-
-function openConfirm(h: DiscoveredHost) {
-  confirmErr.value = ''
-  confirming.value = {
-    hostId: h.id,
-    typeId: h.proposed_type_id ?? props.types[0]?.id ?? '',
-    label: h.hostname || h.ip,
-  }
-}
-
-async function submitConfirm(h: DiscoveredHost) {
-  if (!confirming.value || !props.point)
-    return
-  confirmErr.value = ''
-  try {
-    await $fetch(`/api/discovery/${props.point.id}/confirm`, {
-      method: 'POST', headers: headers.value,
-      body: { ip: h.ip, typeId: confirming.value.typeId, label: confirming.value.label },
-    })
-    confirming.value = null
-    emit('confirmed')
-    diff.value = await $fetch<DiscoveryDiff>(`/api/discovery/${props.point.id}/hosts`, { headers: headers.value })
-  }
-  catch (e) {
-    confirmErr.value = (e as { data?: { statusMessage?: string } }).data?.statusMessage ?? (e as Error).message
-  }
 }
 </script>
 
@@ -315,9 +332,10 @@ async function submitConfirm(h: DiscoveredHost) {
               </UButton>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-              <UButton size="sm" color="primary" icon="i-lucide-plus" :loading="bulkBusy" :disabled="!selected.length" data-action="add-selected" @click="addSelected">
+              <UButton size="sm" color="primary" icon="i-lucide-plus" :loading="bulkBusy" :disabled="!selected.length || missingType" data-action="add-selected" @click="addSelected">
                 {{ t('discovery.addAll', { count: selected.length }) }}
               </UButton>
+              <span v-if="missingType" class="text-xs text-warning">{{ t('discovery.pickType') }}</span>
               <span v-if="bulkResult" class="text-xs text-muted">{{ bulkResult }}</span>
             </div>
           </div>
@@ -335,7 +353,7 @@ async function submitConfirm(h: DiscoveredHost) {
           <li v-for="h in sortedHosts" :key="h.id" class="p-3">
             <div class="flex items-start gap-2">
               <UCheckbox
-                v-if="h.reconcile_status === 'new' && h.proposed_type_id"
+                v-if="h.reconcile_status === 'new' || h.reconcile_status === 'rogue'"
                 :model-value="selected.includes(h.id)"
                 :aria-label="h.ip"
                 class="mt-0.5"
@@ -344,39 +362,25 @@ async function submitConfirm(h: DiscoveredHost) {
               />
               <div class="flex min-w-0 flex-1 flex-col gap-1.5">
                 <DiscoverHostCard :host="h" :types="types" :shared-key-with="sharedKeyWith(h)" />
-                <UInput
-                  v-if="h.reconcile_status === 'new' && h.proposed_type_id && selected.includes(h.id)"
-                  :model-value="names[h.id] ?? ''"
-                  size="sm"
-                  :placeholder="t('discovery.label')"
-                  data-testid="host-name"
-                  @update:model-value="setName(h.id, String($event))"
-                />
+                <div v-if="selected.includes(h.id)" class="flex flex-wrap gap-2">
+                  <USelect
+                    v-model="hostTypes[h.id]"
+                    :items="typeItems"
+                    size="sm"
+                    class="w-44"
+                    :placeholder="t('discovery.type')"
+                    data-testid="host-type"
+                  />
+                  <UInput
+                    :model-value="names[h.id] ?? ''"
+                    size="sm"
+                    class="min-w-32 flex-1"
+                    :placeholder="t('discovery.label')"
+                    data-testid="host-name"
+                    @update:model-value="setName(h.id, String($event))"
+                  />
+                </div>
               </div>
-              <UButton
-                v-if="h.reconcile_status === 'new'"
-                size="xs"
-                variant="ghost"
-                color="primary"
-                @click="openConfirm(h)"
-              >
-                {{ t('discovery.confirm') }}
-              </UButton>
-            </div>
-
-            <!-- inline confirm form (explicit confirm of type+label) -->
-            <div v-if="confirming?.hostId === h.id" class="mt-2 flex flex-wrap items-end gap-2 rounded bg-elevated p-2">
-              <UFormField :label="t('discovery.type')" class="w-44">
-                <USelect v-model="confirming.typeId" :items="typeItems" size="sm" />
-              </UFormField>
-              <UFormField :label="t('discovery.label')" class="flex-1 min-w-32">
-                <UInput v-model="confirming.label" size="sm" class="w-full" />
-              </UFormField>
-              <UButton size="sm" color="neutral" variant="ghost" @click="confirming = null">{{ t('discovery.cancel') }}</UButton>
-              <UButton size="sm" color="primary" :disabled="!confirming.typeId || !confirming.label" @click="submitConfirm(h)">
-                {{ t('discovery.add') }}
-              </UButton>
-              <p v-if="confirmErr" class="w-full text-xs text-error">{{ t('discovery.confirmError', { message: confirmErr }) }}</p>
             </div>
           </li>
         </ul>
