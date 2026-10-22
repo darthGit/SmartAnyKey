@@ -52,7 +52,8 @@ describe('custom-tasks: task credentials (AC-11)', () => {
 
 describe('custom-tasks: min_role run gate (AC-9)', () => {
   it('AC-9: a command carries min_role (round-trip) and the gate = hasRole', async () => {
-    const { data: type } = await service.from('device_types').select('id').limit(1).single()
+    // not another spec's fixture type (slug `__…__`): those are deleted in parallel → FK race
+    const { data: type } = await service.from('device_types').select('id').not('slug', 'like', '\\_\\_%').order('sort').limit(1).single()
     const base = {
       type_id: type!.id, name: '__task_test_cmd__', body: 'echo hi', interpreter: 'raw' as const,
       confirm: false, timeout_s: 30, sort: 0, purpose: 'action' as const, stable: false,

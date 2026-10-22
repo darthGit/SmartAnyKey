@@ -268,7 +268,7 @@ function duplicate() {
 // Point = server-side search (points 300+). Type = a dropdown of our
 // device_types (few rows → all). Mutation — POST with Bearer.
 const addOpen = ref(false)
-const types = ref<{ label: string, value: string }[]>([])
+const types = ref<{ label: string, value: string, actions: Action[] }[]>([])
 type PointRow = { id: string, number: number, address: string }
 const pointResults = ref<PointRow[]>([])
 const pointSearchTerm = ref('')
@@ -289,8 +289,9 @@ const pointItems = computed(() => {
 async function loadTypes() {
   if (types.value.length)
     return
-  const { data } = await supabase.from('device_types').select('id,name').order('sort')
-  types.value = (data ?? []).map((r: { id: string, name: string }) => ({ label: r.name, value: r.id }))
+  const { data } = await supabase.from('device_types').select('id,name,default_action,actions').order('sort')
+  types.value = (data ?? []).map((r: { id: string, name: string, default_action: Action, actions: Action[] | null }) =>
+    ({ label: r.name, value: r.id, actions: r.actions?.length ? r.actions : [r.default_action] }))
 }
 watch(addOpen, (open) => {
   if (!open)
@@ -325,6 +326,15 @@ const addForm = reactive<{ pointId: string | null, typeId: string | null, action
 })
 const addErr = ref('')
 const addMsg = ref('')
+
+// Picking a type ticks its protocols; the admin can untick for this one device.
+watch(() => addForm.typeId, (id) => {
+  const ty = types.value.find(x => x.value === id)
+  if (ty) {
+    addForm.actions = [...ty.actions]
+    addForm.defaultAction = 'auto'
+  }
+})
 
 watch(() => addForm.pointId, (id) => {
   const p = pointResults.value.find(x => x.id === id)

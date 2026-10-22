@@ -373,7 +373,15 @@
     "deleteConfirm": "Delete type \"{name}\"?",
     "deleteError": "Cannot delete \"{name}\": {message}",
     "saveError": "Save failed: {message}",
-    "loadError": "Failed to load types: {message}"
+    "loadError": "Failed to load types: {message}",
+    "actions": "Protocols",
+    "actionsHint": "New devices of this type get all of them — from discovery, import or manual add.",
+    "apply": "Apply to devices",
+    "applyHint": "Add this type's protocols to its existing devices that miss them",
+    "applyConfirm": "Add {protocols} to {count} existing device(s) of type \"{name}\"? Protocols are only added, none removed.",
+    "applyDone": "{count} device(s) of \"{name}\" updated.",
+    "applyNone": "All devices of \"{name}\" already have its protocols.",
+    "sortShort": "Order {n}"
   },
   "import": {
     "title": "Bulk import",

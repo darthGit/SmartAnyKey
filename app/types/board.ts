@@ -41,6 +41,7 @@ export interface DeviceType {
   icon: string
   color: string
   default_action: string
+  actions?: string[] // empty/absent = just default_action
   sort: number
 }
 

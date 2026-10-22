@@ -13,6 +13,7 @@ import type { Observation } from '../repositories/scanner'
 import { finish, insertRunning, setPhase } from '../repositories/task-runs'
 import { bumpNextScan, duePoints, insertDriftEvents } from '../repositories/drift'
 import { diffToDriftRows } from './drift'
+import { typeActions } from './device-types'
 
 export interface ScanSummary {
   new: number
@@ -141,8 +142,8 @@ export interface ConfirmInput {
 export async function confirmDevice(client: SupabaseClient, pointId: string, input: ConfirmInput): Promise<{ id: string }> {
   let actions = input.actions
   if (!actions?.length) {
-    const { data: t } = await client.from('device_types').select('default_action').eq('id', input.typeId).maybeSingle()
-    actions = t ? [(t as { default_action: string }).default_action] : []
+    const { data: t } = await client.from('device_types').select('default_action,actions').eq('id', input.typeId).maybeSingle()
+    actions = t ? typeActions(t as { default_action: string, actions: string[] }) : []
   }
   const { data, error } = await client.from('devices').insert({
     point_id: pointId, type_id: input.typeId, label: input.label, host: input.ip,

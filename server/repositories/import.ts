@@ -4,6 +4,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createError } from 'h3'
 import type { BuildCtx, DiffEntry, Kind } from '../services/import'
+import { typeActions } from '../services/device-types'
 
 export interface ImportSummary {
   created: number
@@ -163,13 +164,12 @@ async function applyDevices(sr: SupabaseClient, entries: DiffEntry[]): Promise<I
   if (pErr) dbFail(pErr.message)
   const pointId = new Map((pts ?? []).map((p: { id: string, number: number }) => [String(p.number), p.id]))
 
-  // Import has no protocols column → the device defaults actions to its type's
-  // default_action (otherwise the context menu is empty). Mirrors the discovery
-  // confirm route. Only READs device_types (not resolve-by-name).
+  // Import has no protocols column → the device gets its type's protocols (otherwise the
+  // context menu is empty). Mirrors the discovery confirm route. Only READs device_types.
   const typeIds = [...new Set(work.map(e => e.row.type_id))]
-  const { data: types, error: tErr } = await sr.from('device_types').select('id,default_action').in('id', typeIds)
+  const { data: types, error: tErr } = await sr.from('device_types').select('id,default_action,actions').in('id', typeIds)
   if (tErr) dbFail(tErr.message)
-  const typeDefault = new Map((types ?? []).map((t: { id: string, default_action: string }) => [t.id, t.default_action]))
+  const typeSet = new Map((types ?? []).map((t: { id: string, default_action: string, actions: string[] }) => [t.id, typeActions(t)]))
 
   const toInsert: Record<string, unknown>[] = []
   for (const e of work) {
@@ -183,8 +183,7 @@ async function applyDevices(sr: SupabaseClient, entries: DiffEntry[]): Promise<I
       summary.updated++
       continue
     }
-    const def = typeDefault.get(tid)
-    toInsert.push({ point_id: pid, type_id: tid, label: e.row.label ?? e.row.host, host: e.row.host, actions: def ? [def] : [] })
+    toInsert.push({ point_id: pid, type_id: tid, label: e.row.label ?? e.row.host, host: e.row.host, actions: typeSet.get(tid) ?? [] })
   }
   if (toInsert.length) {
     const { error } = await sr.from('devices').insert(toInsert).select('id')

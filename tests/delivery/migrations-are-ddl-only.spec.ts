@@ -16,6 +16,8 @@ const ALLOWED: Record<string, string> = {
     '`storage.buckets` provisioning — Supabase models a bucket as a row, but it is a schema object (run artifacts do not work without it), not domain data',
   '0019_first_admin_claim.sql':
     'DDL: `create function`. `insert into public.profiles` sits in the function BODY ($$…$$), so it runs only when `/setup` calls it — the migration itself runs nothing. The detector cannot tell function bodies apart, hence an entry here rather than a looser regex',
+  '0021_type_actions.sql':
+    'DDL: `create function apply_type_actions`. Its `update public.devices` sits in the function BODY ($$…$$) and runs only when an admin clicks "Apply to devices" — the migration itself writes no row. Same class as 0019',
   '0018_task_builtin.sql':
     'built-in backup recipe provisioning (AC-24): the row comes from the PRODUCT, not the client, and must exist on ANY install — in prod `supabase/seeds/*.sql` never run (only migrations + seed-admin), so in seeds this row would reach nowhere. Same class as the bucket in 0015: provisioning a product object, not domain data',
 }
