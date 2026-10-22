@@ -201,6 +201,8 @@
     "title": "Розвідка",
     "point": "Точка №{number}",
     "scanning": "Сканування підмережі {subnet}…",
+    "progressSweep": "Пошук хостів",
+    "progressServices": "Сканування сервісів",
     "scanFailed": "Скан не вдався: {error}",
     "noHosts": "Живих хостів не знайдено.",
     "rescan": "Пересканувати",

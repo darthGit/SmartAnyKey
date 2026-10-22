@@ -10,7 +10,7 @@ import { scanSubnet } from '../repositories/scanner'
 import { getAllRecentHosts, getKnownDevices, getPoint, getSignatures, listHosts, replaceHosts, updateDeviceHostname, type HostRow } from '../repositories/discovered'
 import { hostnameUpdates, matchType, reconcile, resolvePorts, type MatchedObs, type ScanMode } from './discovery'
 import type { Observation } from '../repositories/scanner'
-import { finish, insertRunning } from '../repositories/task-runs'
+import { finish, insertRunning, setPhase } from '../repositories/task-runs'
 import { bumpNextScan, duePoints, insertDriftEvents } from '../repositories/drift'
 import { diffToDriftRows } from './drift'
 
@@ -43,7 +43,11 @@ export async function runScan(client: SupabaseClient, pointId: string, scanRunId
 
   // ponytail: unprivileged (-sT, no -O). OS guessing is enabled by granting
   // CAP_NET_RAW + privileged:true — an env toggle, when needed.
-  const observations = await scanSubnet(point.subnet, { ports })
+  // Progress for the drawer/teach poll: task_run.phase = `stage|nmap task|percent` (nmap reports
+  // every 2 s). A failed write must not fail the scan — progress is cosmetic.
+  const observations = await scanSubnet(point.subnet, { ports }, (stage, p) => {
+    setPhase(client, scanRunId, `${stage}|${p.task}|${Math.round(p.percent)}`).catch(() => {})
+  })
   const devices = await getKnownDevices(client, pointId)
 
   const matched: MatchedObs[] = observations.map(obs => ({ obs, match: matchType(obs, signatures) }))

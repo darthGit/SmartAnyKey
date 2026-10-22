@@ -12,6 +12,7 @@ import type { Observation } from '~/../server/repositories/scanner'
 import type { SignalSelection } from '~/utils/teachSignatureDraft'
 import { signalDiff } from '~/utils/signalDiff'
 import { teachSignatureDraft } from '~/utils/teachSignatureDraft'
+import { scanProgressText } from '~/utils/scanProgress'
 
 const emit = defineEmits<{ changed: [] }>()
 const { t } = useI18n()
@@ -47,12 +48,14 @@ watch(session, (s) => { if (s) loadAll() }, { immediate: true })
 
 // --- scan (reuses the DiscoverDrawer pattern) ----------------------------
 const phase = ref<'idle' | 'scanning' | 'done' | 'failed'>('idle')
+const progress = ref('')
 const errorMsg = ref('')
 const hosts = ref<DiscoveredHost[]>([])
 
 async function pollRun(id: string) {
   for (let i = 0; i < 1000 && phase.value === 'scanning'; i++) {
-    const { data } = await supabase.from('task_run').select('status,error').eq('id', id).maybeSingle()
+    const { data } = await supabase.from('task_run').select('status,error,phase').eq('id', id).maybeSingle()
+    progress.value = scanProgressText(data?.phase, t)
     if (data?.status === 'done') {
       const diff = await $fetch<DiscoveryDiff>(`/api/discovery/${pointId.value}/hosts`, { headers: headers.value })
       hosts.value = diff.hosts
@@ -68,6 +71,7 @@ async function startScan() {
   if (!pointId.value)
     return
   phase.value = 'scanning'
+  progress.value = ''
   errorMsg.value = ''
   hosts.value = []
   sample.value = null
@@ -216,6 +220,7 @@ const labeledTypeNames = computed(() => [...new Set(labeled.value.map(l => typeN
     <p v-if="phase === 'scanning'" class="flex items-center gap-2 text-sm text-muted">
       <UIcon name="i-lucide-loader-circle" class="animate-spin" />
       {{ t('onboarding.teach.scanning', { subnet: pointOf?.subnet }) }}
+      <span v-if="progress" class="text-xs" data-testid="scan-progress">{{ progress }}</span>
     </p>
     <p v-else-if="phase === 'failed'" class="text-sm text-error">{{ t('onboarding.teach.scanFailed', { error: errorMsg }) }}</p>
 

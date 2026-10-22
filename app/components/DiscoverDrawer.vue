@@ -8,6 +8,7 @@
 //           the point is the next step (drift-inbox), the seam in reconcile_status exists.
 import type { DeviceType, DiscoveredHost, DiscoveryDiff, Point } from '~/types/board'
 import { fillNames } from '~/utils/nameTemplate'
+import { scanProgressText } from '~/utils/scanProgress'
 
 const props = defineProps<{ point: Point | null, open: boolean, types: DeviceType[] }>()
 const emit = defineEmits<{ 'update:open': [boolean], 'confirmed': [], 'scheduled': [] }>()
@@ -98,9 +99,10 @@ async function pollRun(id: string, pointId: string) {
   activeRun.value = id
   try {
     for (let i = 0; i < 1000 && activeRun.value === id; i++) {
-      const { data } = await supabase.from('task_run').select('status,error').eq('id', id).maybeSingle()
+      const { data } = await supabase.from('task_run').select('status,error,phase').eq('id', id).maybeSingle()
       if (activeRun.value !== id)
         return
+      progress.value = scanProgressText(data?.phase, t)
       if (data?.status === 'done') {
         diff.value = await $fetch<DiscoveryDiff>(`/api/discovery/${pointId}/hosts`, { headers: headers.value })
         phase.value = 'done'
@@ -120,7 +122,10 @@ async function pollRun(id: string, pointId: string) {
   }
 }
 
+const progress = ref('')
+
 function resetForScan(pointId: string) {
+  progress.value = ''
   scanPointId.value = pointId
   activeRun.value = null
   phase.value = 'scanning'
@@ -298,9 +303,12 @@ async function addSelected() {
       </div>
 
       <div v-if="phase === 'scanning'" class="flex items-center gap-2 text-muted">
-        <UIcon name="i-lucide-loader-circle" class="animate-spin" />
-        {{ t('discovery.scanning', { subnet: point?.subnet }) }}
-        <UButton class="ml-auto" size="xs" variant="ghost" color="neutral" icon="i-lucide-square" @click="stopScan">
+        <UIcon name="i-lucide-loader-circle" class="shrink-0 animate-spin" />
+        <div class="flex min-w-0 flex-col">
+          <span>{{ t('discovery.scanning', { subnet: point?.subnet }) }}</span>
+          <span v-if="progress" class="text-xs" data-testid="scan-progress">{{ progress }}</span>
+        </div>
+        <UButton class="ml-auto shrink-0" size="xs" variant="ghost" color="neutral" icon="i-lucide-square" @click="stopScan">
           {{ t('discovery.stop') }}
         </UButton>
       </div>

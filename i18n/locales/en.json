@@ -201,6 +201,8 @@
     "title": "Discover",
     "point": "Point #{number}",
     "scanning": "Scanning subnet {subnet}…",
+    "progressSweep": "Finding hosts",
+    "progressServices": "Scanning services",
     "scanFailed": "Scan failed: {error}",
     "noHosts": "No live hosts found.",
     "rescan": "Rescan",

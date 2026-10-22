@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<?xml-stylesheet href="file:///usr/bin/../share/nmap/nmap.xsl" type="text/xsl"?>
+<!-- Nmap 7.991 scan initiated Thu Oct 22 14:36:43 2026 as: nmap -sn -T4 -&#45;max-retries 1 -&#45;max-rtt-timeout 300ms -&#45;min-hostgroup 256 -&#45;min-parallelism 512 -PS21,22,23,25,53,80,110,135,139,143,161,389,443,445,554,631,993,995,1433,1521,1723,1883,2049,3306,3389,5000,5060,5432,5800,5900,5901,5985,6379,7547,8000,8008,8080,8081,8443,8888,9000,9100,9443,10000,27017,49152 -&#45;stats-every 1s -oX - 10.42.142.0/24 -->
+<nmaprun scanner="nmap" args="nmap -sn -T4 -&#45;max-retries 1 -&#45;max-rtt-timeout 300ms -&#45;min-hostgroup 256 -&#45;min-parallelism 512 -PS21,22,23,25,53,80,110,135,139,143,161,389,443,445,554,631,993,995,1433,1521,1723,1883,2049,3306,3389,5000,5060,5432,5800,5900,5901,5985,6379,7547,8000,8008,8080,8081,8443,8888,9000,9100,9443,10000,27017,49152 -&#45;stats-every 1s -oX - 10.42.142.0/24" start="1792669003" startstr="Thu Oct 22 14:36:43 2026" version="7.991" xmloutputversion="1.05">
+<verbose level="0"/>
+<debugging level="0"/>
+<taskprogress task="Ping Scan" time="1792669004" percent="7.24" remaining="14" etc="1792669018"/>
+<taskprogress task="Ping Scan" time="1792669005" percent="32.56" remaining="13" etc="1792669018"/>
+<taskprogress task="Ping Scan" time="1792669006" percent="48.23" remaining="12" etc="1792669018"/>
+<taskprogress task="Ping Scan" time="1792669007" percent="55.33" remaining="11" etc="1792669018"/>
+<taskprogress task="Ping Scan" time="1792669008" percent="59.16" remaining="10" etc="1792669018"/>
+<taskprogress task="Ping Scan" time="1792669009" percent="62.07" remaining="9" etc="1792669018"/>
+<taskprogress task="Ping Scan" time="1792669010" percent="66.58" remaining="7" etc="1792669017"/>
+<taskprogress task="Ping Scan" time="1792669011" percent="72.45" remaining="5" etc="1792669016"/>
+<host><status state="up" reason="conn-refused" reason_ttl="0"/>
+<address addr="10.42.142.1" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+<times srtt="1075" rttvar="5000" to="100000"/>
+</host>
+<host><status state="up" reason="conn-refused" reason_ttl="0"/>
+<address addr="10.42.142.31" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+<times srtt="396" rttvar="5000" to="100000"/>
+</host>
+<host><status state="up" reason="conn-refused" reason_ttl="0"/>
+<address addr="10.42.142.41" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+<times srtt="197" rttvar="5000" to="100000"/>
+</host>
+<host><status state="up" reason="conn-refused" reason_ttl="0"/>
+<address addr="10.42.142.51" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+<times srtt="203" rttvar="1356" to="100000"/>
+</host>
+<host><status state="up" reason="conn-refused" reason_ttl="0"/>
+<address addr="10.42.142.254" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+<times srtt="129" rttvar="5000" to="100000"/>
+</host>
+<runstats><finished time="1792669012" timestr="Thu Oct 22 14:36:52 2026" summary="Nmap done at Thu Oct 22 14:36:52 2026; 256 IP addresses (5 hosts up) scanned in 9.37 seconds" elapsed="9.37" exit="success"/><hosts up="5" down="251" total="256"/>
+</runstats>
+</nmaprun>

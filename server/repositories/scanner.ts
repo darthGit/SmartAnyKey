@@ -2,14 +2,11 @@
 // a future agent/WinRM — services see domain Observations). nmap is mature;
 // our value is the integration, not a home-grown scanner.
 //
-// Security: execFile with an argv array (no shell) + target validation (CIDR/IP).
+// Security: spawn with an argv array (no shell) + target validation (CIDR/IP).
 // The target never enters a command string — only as a separate argv element, and
 // only after assertTarget. Two phases: a fast liveness sweep → service/NSE on
 // live hosts. Unprivileged (-sT -sV +NSE); -O only when CAP_NET_RAW is granted.
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-
-const execFileAsync = promisify(execFile)
+import { spawn } from 'node:child_process'
 
 // Curated port set (generic, not domain-specific — typical admin/device ports).
 // It is also the liveness probe of the sweep, so it reaches past 80/443: Windows (135,
@@ -129,10 +126,72 @@ export function parseNmapXml(xml: string): Observation[] {
   return out
 }
 
-async function runNmap(args: string[], timeoutMs: number): Promise<string> {
-  // execFile: arguments are an array, NOT a string → no shell is involved.
-  const { stdout } = await execFileAsync('nmap', args, { timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024 })
-  return stdout
+export interface ScanProgress { task: string, percent: number }
+export type OnProgress = (p: ScanProgress) => void
+
+const PROGRESS_RE = /<taskprogress task="([^"]+)"[^>]*?percent="([\d.]+)"[^>]*\/>/g
+
+// nmap --stats-every writes <taskprogress …/> into the XML stream; a chunk may end mid-element,
+// so the unparsed tail is carried into the next chunk.
+export function progressReader(onProgress: OnProgress): (chunk: string) => void {
+  let tail = ''
+  return (chunk) => {
+    const text = tail + chunk
+    let end = 0
+    for (const m of text.matchAll(PROGRESS_RE)) {
+      onProgress({ task: m[1]!, percent: Number(m[2]) })
+      end = m.index + m[0].length
+    }
+    const open = text.lastIndexOf('<taskprogress')
+    tail = open >= end ? text.slice(open) : ''
+  }
+}
+
+const MAX_OUTPUT = 32 * 1024 * 1024
+
+// spawn (not execFile) so progress arrives while nmap runs. Same contract as before: argv
+// array, no shell; reject on timeout (nmap killed), non-zero exit (stderr in the message)
+// or output past MAX_OUTPUT.
+export function runNmap(args: string[], timeoutMs: number, onProgress?: OnProgress): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('nmap', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const out: Buffer[] = []
+    let size = 0
+    let stderr = ''
+    let failure: Error | null = null
+    const feed = onProgress ? progressReader(onProgress) : null
+    const stop = (e: Error) => {
+      failure ??= e
+      child.kill('SIGKILL')
+    }
+    const timer = setTimeout(() => stop(new Error(`nmap timed out after ${timeoutMs} ms`)), timeoutMs)
+    child.stdout.on('data', (b: Buffer) => {
+      size += b.length
+      if (size > MAX_OUTPUT)
+        return stop(new Error('nmap output exceeded 32 MB'))
+      out.push(b)
+      feed?.(b.toString('utf8'))
+    })
+    child.stderr.on('data', (b: Buffer) => { stderr = (stderr + b.toString('utf8')).slice(-4000) })
+    child.on('error', (e) => { clearTimeout(timer); reject(e) })
+    // on a kill, settle at exit: a grandchild holding the pipes would delay 'close'
+    child.on('exit', () => {
+      if (!failure)
+        return
+      clearTimeout(timer)
+      child.stdout.destroy()
+      child.stderr.destroy()
+      reject(failure)
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      if (failure)
+        return
+      if (code !== 0)
+        return reject(new Error(`nmap exited with ${code}: ${stderr.trim()}`))
+      resolve(Buffer.concat(out).toString('utf8'))
+    })
+  })
 }
 
 // Sweep probe = curated ports, plus a short explicit list the scan asked for (custom mode).
@@ -154,12 +213,12 @@ export function livenessPorts(scanPorts: string): string {
 export function buildSweepArgs(subnet: string, probePorts: string): string[] {
   assertTarget(subnet)
   return ['-sn', '-T4', '--max-retries', '1', '--max-rtt-timeout', '300ms', '--min-hostgroup', '256',
-    '--min-parallelism', '512', `-PS${probePorts}`, '-oX', '-', subnet]
+    '--min-parallelism', '512', `-PS${probePorts}`, '--stats-every', '2s', '-oX', '-', subnet]
 }
 
 // Phase 1: liveness sweep of a /24. Returns live IPs.
-export async function sweep(subnet: string, probePorts = CURATED_PORTS, timeoutMs = 60_000): Promise<string[]> {
-  const xml = await runNmap(buildSweepArgs(subnet, probePorts), timeoutMs)
+export async function sweep(subnet: string, probePorts = CURATED_PORTS, timeoutMs = 60_000, onProgress?: OnProgress): Promise<string[]> {
+  const xml = await runNmap(buildSweepArgs(subnet, probePorts), timeoutMs, onProgress)
   return parseNmapXml(xml).map(o => o.ip)
 }
 
@@ -167,6 +226,7 @@ export interface ServiceScanOpts {
   privileged?: boolean   // CAP_NET_RAW → add -O (OS guess). Default: unprivileged
   ports?: string
   timeoutMs?: number
+  onProgress?: OnProgress
 }
 
 // argv builder extracted for a unit test (no shell, target as a separate element).
@@ -180,7 +240,7 @@ export function buildServiceArgs(ips: string[], opts: ServiceScanOpts = {}): str
   const args = ['-sT', '-sV', '-Pn', '-T3', '-p', opts.ports ?? CURATED_PORTS, '--script', 'ssh-hostkey,ssl-cert,rdp-ntlm-info,smb-os-discovery']
   if (opts.privileged)
     args.push('-O')
-  args.push('-oX', '-', ...ips)
+  args.push('--stats-every', '2s', '-oX', '-', ...ips)
   return args
 }
 
@@ -188,12 +248,17 @@ export function buildServiceArgs(ips: string[], opts: ServiceScanOpts = {}): str
 export async function serviceScan(ips: string[], opts: ServiceScanOpts = {}): Promise<Observation[]> {
   if (ips.length === 0)
     return []
-  const xml = await runNmap(buildServiceArgs(ips, opts), opts.timeoutMs ?? 300_000)
+  const xml = await runNmap(buildServiceArgs(ips, opts), opts.timeoutMs ?? 300_000, opts.onProgress)
   return parseNmapXml(xml)
 }
 
+export type ScanStage = 'sweep' | 'services'
+
 // Top level: sweep → service scan of live hosts. Services see only Observation[].
-export async function scanSubnet(subnet: string, opts: ServiceScanOpts = {}): Promise<Observation[]> {
-  const live = await sweep(subnet, livenessPorts(opts.ports ?? CURATED_PORTS))
-  return serviceScan(live, opts)
+// onStage tags nmap's progress with which of the two invocations it belongs to.
+export async function scanSubnet(subnet: string, opts: ServiceScanOpts = {}, onStage?: (stage: ScanStage, p: ScanProgress) => void): Promise<Observation[]> {
+  onStage?.('sweep', { task: '', percent: 0 })
+  const live = await sweep(subnet, livenessPorts(opts.ports ?? CURATED_PORTS), 60_000, onStage && (p => onStage('sweep', p)))
+  onStage?.('services', { task: '', percent: 0 }) // the next nmap reports only after 2 s
+  return serviceScan(live, { ...opts, onProgress: onStage && (p => onStage('services', p)) })
 }

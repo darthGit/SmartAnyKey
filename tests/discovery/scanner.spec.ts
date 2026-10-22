@@ -1,10 +1,12 @@
 // RED: scanner repo. assertTarget/buildServiceArgs are pure functions
 // (injection guard + argv without a shell); parseNmapXml runs against real nmap
 // fixtures (tests/fixtures/nmap/*.xml — real output, not synthetic).
-import { readFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
-import { assertTarget, buildServiceArgs, buildSweepArgs, CURATED_PORTS, livenessPorts, parseNmapXml } from '../../server/repositories/scanner'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { assertTarget, buildServiceArgs, buildSweepArgs, CURATED_PORTS, livenessPorts, parseNmapXml, progressReader, runNmap } from '../../server/repositories/scanner'
 
 const fx = (n: string) => readFileSync(fileURLToPath(new URL(`../fixtures/nmap/${n}`, import.meta.url)), 'utf8')
 
@@ -126,5 +128,67 @@ describe('NSE hostname harvest (AC-2)', () => {
       <elem key="NetBIOS_Computer_Name">W16GA-SRV01</elem>
       <elem key="DNS_Computer_Name">W16GA-SRV01.W2016.lab</elem></script></port></ports></host></nmaprun>`
     expect(parseNmapXml(xml)[0]?.nseHostname).toBe('W16GA-SRV01')
+  })
+})
+
+// Scan progress: nmap --stats-every writes <taskprogress> into the same
+// XML stream; runNmap streams stdout so the run can report it while nmap is still working.
+describe('scan progress', () => {
+  it('reads task + percent from real nmap output, also across a chunk split mid-element (AC-5)', () => {
+    const xml = fx('sweep-progress.xml')
+    const seen: Array<{ task: string, percent: number }> = []
+    const feed = progressReader(p => seen.push(p))
+    const cut = xml.indexOf('percent="32.56"') // split inside the second <taskprogress>
+    feed(xml.slice(0, cut))
+    feed(xml.slice(cut))
+    expect(seen[0]).toEqual({ task: 'Ping Scan', percent: 7.24 })
+    expect(seen).toContainEqual({ task: 'Ping Scan', percent: 32.56 })
+    expect(seen).toHaveLength(8)
+    const svc: Array<{ task: string, percent: number }> = []
+    progressReader(p => svc.push(p))(fx('service-progress.xml'))
+    expect(svc).toContainEqual({ task: 'Service scan', percent: 33.33 })
+  })
+
+  it('progress elements do not change the parsed hosts (AC-6)', () => {
+    const hosts = parseNmapXml(fx('service-progress.xml'))
+    expect(hosts.map(h => h.ip)).toEqual(['10.42.142.1', '10.42.142.41', '10.42.142.51'])
+    expect(hosts.find(h => h.ip === '10.42.142.41')?.ports.map(p => p.port)).toEqual([80, 9100])
+  })
+
+  it('both nmap invocations ask for progress', () => {
+    expect(buildSweepArgs('10.0.6.0/24', '22')).toEqual(expect.arrayContaining(['--stats-every', '2s']))
+    expect(buildServiceArgs(['10.0.6.1'])).toEqual(expect.arrayContaining(['--stats-every', '2s']))
+  })
+
+  describe('runNmap against a stub nmap in PATH (AC-4)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sak-nmap-'))
+    const stub = (body: string) => {
+      writeFileSync(join(dir, 'nmap'), `#!/bin/sh\n${body}\n`)
+      chmodSync(join(dir, 'nmap'), 0o755)
+    }
+    const PATH = process.env.PATH
+    beforeEach(() => { process.env.PATH = `${dir}:${PATH}` })
+    afterEach(() => { process.env.PATH = PATH })
+
+    it('streams progress and resolves with the full output', async () => {
+      stub(`cat '${fileURLToPath(new URL('../fixtures/nmap/sweep-progress.xml', import.meta.url))}'`)
+      const seen: number[] = []
+      const out = await runNmap([], 5000, p => seen.push(p.percent))
+      expect(out).toBe(fx('sweep-progress.xml'))
+      expect(seen).toHaveLength(8)
+    })
+
+    it('kills nmap past the timeout and rejects', async () => {
+      stub(`echo $$ > '${dir}/pid'; sleep 30`)
+      await expect(runNmap([], 300)).rejects.toThrow(/timed out/)
+      const pid = Number(readFileSync(join(dir, 'pid'), 'utf8'))
+      await new Promise(r => setTimeout(r, 100))
+      expect(() => process.kill(pid, 0)).toThrow()
+    })
+
+    it('a non-zero exit rejects with nmap\'s stderr', async () => {
+      stub('echo "Failed to resolve target" >&2; exit 1')
+      await expect(runNmap([], 5000)).rejects.toThrow(/Failed to resolve target/)
+    })
   })
 })
