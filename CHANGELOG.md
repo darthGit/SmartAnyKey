@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] — 2026-10-22
+
+### Added
+
+- Discovery rules: an `ip_range` pattern that starts with `^` is a regular
+  expression tested against the host IP, so one rule can cover the same host
+  addresses in every branch subnet (e.g. `^(?:192|10)\.168\.\d{1,3}\.25[0-4]$`).
+  Other patterns are CIDR or a single IP, as before.
+- Discovery: pick the device type for each host before adding it — change the
+  type the classifier proposed, or add a host no rule matched by choosing its
+  type by hand.
+
+### Fixed
+
+- Discovery: closing the window no longer loses a running scan. Reopening the
+  point (or reloading the page) shows that scan or its result instead of
+  starting a new one.
+- Discovery: the "Added N" result stays visible after the last host is added.
+
 ## [0.1.2] — 2026-10-21
 
 ### Fixed
@@ -74,6 +93,7 @@ First public release.
 - Rate limiting on sign-in and on opening sessions; self-signup disabled.
 - Content-Security-Policy, frame protection, HSTS behind TLS.
 
+[0.2.0]: https://github.com/darthGit/SmartAnyKey/releases/tag/v0.2.0
 [0.1.2]: https://github.com/darthGit/SmartAnyKey/releases/tag/v0.1.2
 [0.1.1]: https://github.com/darthGit/SmartAnyKey/releases/tag/v0.1.1
 [0.1.0]: https://github.com/darthGit/SmartAnyKey/releases/tag/v0.1.0
