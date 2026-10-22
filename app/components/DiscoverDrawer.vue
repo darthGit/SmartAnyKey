@@ -125,6 +125,7 @@ function resetForScan(pointId: string) {
   activeRun.value = null
   phase.value = 'scanning'
   errorMsg.value = ''
+  bulkResult.value = ''
   diff.value = null
 }
 
@@ -336,9 +337,10 @@ async function addSelected() {
                 {{ t('discovery.addAll', { count: selected.length }) }}
               </UButton>
               <span v-if="missingType" class="text-xs text-warning">{{ t('discovery.pickType') }}</span>
-              <span v-if="bulkResult" class="text-xs text-muted">{{ bulkResult }}</span>
             </div>
           </div>
+          <!-- outside the add panel: it hides once every candidate is added -->
+          <p v-if="bulkResult" class="text-xs text-muted" data-testid="bulk-result">{{ bulkResult }}</p>
           <p v-if="unclassifiedCount" class="text-xs text-muted">
             {{ t('discovery.unclassifiedHint', { count: unclassifiedCount }) }}
             <UButton to="/admin/teach" variant="link" size="xs" class="px-1" data-action="teach-link">{{ t('discovery.teach') }}</UButton>

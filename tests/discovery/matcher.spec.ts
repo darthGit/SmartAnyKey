@@ -2,7 +2,7 @@
 // weight); confidence% = sum of matched weights / sum of all the type's weights. The
 // engine is domain-agnostic — types/rules here are purely synthetic ids; zero defaults.
 import { describe, expect, it } from 'vitest'
-import { matchType, type Signature } from '../../server/services/discovery'
+import { matchType, type Signature, validatePattern } from '../../server/services/discovery'
 import type { Observation } from '../../server/repositories/scanner'
 
 const obs = (o: Partial<Observation>): Observation => ({ ip: '10.0.6.6', ports: [], ...o })
@@ -73,5 +73,39 @@ describe('matchType (AC-2: type = a combination of signals, coverage %)', () => 
 
   it('a broken user regex does not crash the matcher (safeRe → skip)', () => {
     expect(() => matchType(obs({ tlsCertCn: 'x' }), [sig({ signal_type: 'cert', pattern: '(' })])).not.toThrow()
+  })
+})
+
+// ip_range with a leading ^ is a regex tested against
+// the host IP (same host octet across all branch subnets); otherwise CIDR as before.
+const BRANCH_TAIL = '^(?:192|10)\\.168\\.\\d{1,3}\\.25[0-4]$'
+
+describe('ip_range regex (AC-1)', () => {
+  it('a ^-pattern matches the host IP: .252 hits in any branch subnet, .249 misses', () => {
+    const rules = [sig({ signal_type: 'ip_range', pattern: BRANCH_TAIL, type_id: 'gw', weight: 70 })]
+    expect(matchType(obs({ ip: '192.168.17.252' }), rules)).toMatchObject({ proposedTypeId: 'gw', confidence: 100 })
+    expect(matchType(obs({ ip: '10.168.200.250' }), rules)).toMatchObject({ proposedTypeId: 'gw' })
+    expect(matchType(obs({ ip: '192.168.17.249' }), rules)).toBeNull()
+  })
+})
+
+describe('ip_range regex partial (AC-4: one signal, F1 semantics unchanged)', () => {
+  it('regex ip_range + port, only the IP hit → partial', () => {
+    const m = matchType(obs({ ip: '192.168.3.251' }), [
+      sig({ id: 'a', signal_type: 'ip_range', pattern: BRANCH_TAIL, type_id: 'gw', weight: 50 }),
+      sig({ id: 'b', signal_type: 'port', pattern: '8291', type_id: 'gw', weight: 50 }),
+    ])
+    expect(m).toMatchObject({ proposedTypeId: 'gw', partial: true })
+  })
+})
+
+describe('validatePattern ip_range (AC-2)', () => {
+  it('accepts CIDR, single IP and a ^-regex; rejects a bad mask and a broken regex', () => {
+    expect(validatePattern('ip_range', '10.0.6.0/24')).toBe(true)
+    expect(validatePattern('ip_range', '10.0.6.9')).toBe(true)
+    expect(validatePattern('ip_range', BRANCH_TAIL)).toBe(true)
+    expect(validatePattern('ip_range', '192.0.2.0/33')).toBe(false)
+    expect(validatePattern('ip_range', '^(')).toBe(false)
+    expect(validatePattern('ip_range', '10\\.1\\.\\d+\\.1')).toBe(false) // no ^ → not a regex
   })
 })

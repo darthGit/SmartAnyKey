@@ -20,7 +20,7 @@ const typeItems = computed(() => types.value.map(ty => ({ label: ty.name, value:
 const signalItems = ['ip_range', 'port', 'banner', 'cert', 'os'].map(v => ({ label: v, value: v }))
 // a sample pattern per signal (technical values, not UI copy — like 'raw'/'bash')
 const EXAMPLES: Record<string, string> = {
-  ip_range: '192.0.2.0/24',
+  ip_range: '192.0.2.0/24 · ^10\\.1\\.\\d+\\.1$',
   port: '22',
   banner: 'MikroTik RouterOS',
   cert: 'pos-(\\d+)',

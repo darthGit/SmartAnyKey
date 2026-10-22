@@ -267,7 +267,7 @@
       "new": "Нове правило",
       "signalType": "Сигнал",
       "pattern": "Патерн",
-      "patternHint": "CIDR / номер порту / регекс (залежно від сигналу)",
+      "patternHint": "CIDR / номер порту / регекс (залежно від сигналу). ip_range приймає й регекс, що починається з ^, — перевіряється проти IP хоста",
       "captureTarget": "Capture-група →",
       "captureNone": "немає",
       "captureHostname": "hostname",

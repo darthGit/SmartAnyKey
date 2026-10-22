@@ -267,7 +267,7 @@
       "new": "New rule",
       "signalType": "Signal",
       "pattern": "Pattern",
-      "patternHint": "CIDR / port number / regex (depends on signal)",
+      "patternHint": "CIDR / port number / regex (depends on signal). ip_range also takes a regex starting with ^, tested against the host IP",
       "captureTarget": "Capture group →",
       "captureNone": "none",
       "captureHostname": "hostname",

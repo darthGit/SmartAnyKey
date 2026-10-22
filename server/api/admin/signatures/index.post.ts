@@ -12,7 +12,7 @@ const schema = z.object({
   capture_target: z.enum(['hostname', 'point_number']).nullable().default(null),
   weight: z.number().int().min(1).max(100).default(50),
 }).refine(s => validatePattern(s.signal_type, s.pattern), {
-  message: 'pattern is not valid for signal_type (CIDR/port/regex)', path: ['pattern'],
+  message: 'pattern is not valid for signal_type (ip_range: CIDR or ^regex / port / regex)', path: ['pattern'],
 })
 
 export default defineEventHandler(async (event) => {

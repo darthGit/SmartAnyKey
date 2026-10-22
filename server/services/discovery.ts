@@ -45,7 +45,9 @@ function ipInCidr(ip: string, cidr: string): boolean {
 function testSignature(sig: Signature, obs: Observation): { hit: boolean, capture?: string } {
   switch (sig.signal_type) {
     case 'ip_range':
-      return { hit: ipInCidr(obs.ip, sig.pattern) }
+      // a leading ^ = regex against the IP (same host octet across branch subnets —
+      // a non-contiguous mask CIDR can't express); anything else is CIDR/IP
+      return { hit: sig.pattern.startsWith('^') ? !!safeRe(sig.pattern)?.test(obs.ip) : ipInCidr(obs.ip, sig.pattern) }
     case 'port':
       return { hit: obs.ports.some(p => p.port === Number(sig.pattern)) }
     case 'banner': {
@@ -75,11 +77,12 @@ function safeRe(pattern: string): RegExp | null {
 
 const CIDR_PATTERN = /^(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}(?:\/(?:3[0-2]|[12]?\d))?$/
 
-// Validate pattern by signal_type (admin trust boundary): CIDR/IP for ip_range,
+// Validate pattern by signal_type (admin trust boundary): CIDR/IP or a ^-regex for
+// ip_range (the ^ keeps a typo like /33 rejected instead of becoming a regex),
 // 1-65535 for port, a compilable regex for banner/cert/os.
 export function validatePattern(signalType: Signature['signal_type'], pattern: string): boolean {
   switch (signalType) {
-    case 'ip_range': return CIDR_PATTERN.test(pattern)
+    case 'ip_range': return CIDR_PATTERN.test(pattern) || (pattern.startsWith('^') && safeRe(pattern) !== null)
     case 'port': { const n = Number(pattern); return Number.isInteger(n) && n >= 1 && n <= 65535 }
     default: return safeRe(pattern) !== null
   }
