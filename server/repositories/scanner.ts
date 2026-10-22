@@ -12,8 +12,12 @@ import { promisify } from 'node:util'
 const execFileAsync = promisify(execFile)
 
 // Curated port set (generic, not domain-specific — typical admin/device ports).
+// It is also the liveness probe of the sweep, so it reaches past 80/443: Windows (135,
+// 5985), databases, cameras (554), IoT/MQTT (1883), CUPS (631), common web/admin ports.
 // A full -p- is a separate on-demand deep-profile action (performance).
-export const CURATED_PORTS = '21,22,23,53,80,139,161,443,445,3389,5900,5901,8080,8443,9100'
+export const CURATED_PORTS = '21,22,23,25,53,80,110,135,139,143,161,389,443,445,554,631,993,995,'
+  + '1433,1521,1723,1883,2049,3306,3389,5000,5060,5432,5800,5900,5901,5985,6379,7547,8000,8008,'
+  + '8080,8081,8443,8888,9000,9100,9443,10000,27017,49152'
 
 const IPV4 = String.raw`(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}`
 const CIDR_RE = new RegExp(`^${IPV4}(?:/(?:3[0-2]|[12]?\\d))?$`)
@@ -131,10 +135,31 @@ async function runNmap(args: string[], timeoutMs: number): Promise<string> {
   return stdout
 }
 
-// Phase 1: liveness sweep of a /24 (no ports). Returns live IPs.
-export async function sweep(subnet: string, timeoutMs = 60_000): Promise<string[]> {
+// Sweep probe = curated ports, plus a short explicit list the scan asked for (custom mode).
+// A range (or a long list) never widens it: it would turn the sweep into a port scan.
+export function livenessPorts(scanPorts: string): string {
+  const own = scanPorts.split(',')
+  if (scanPorts.includes('-') || own.length > 100)
+    return CURATED_PORTS
+  const curated = CURATED_PORTS.split(',')
+  return [...curated, ...own.filter(p => !curated.includes(p))].join(',')
+}
+
+// Unprivileged -sn pings only TCP 80/443, so a host with ICMP and both filtered looked down
+// and never reached phase 2. -PS connects to every probe port; the first answer marks it up.
+// Timing measured on a /24 with 46 ports (2026-10-22): defaults ~60 s, this ~12 s, the
+// filtered test host found 3/3. --max-retries 0 silently drops probes — keep 1.
+// ponytail: --max-rtt-timeout 300ms assumes a LAN/VPN round trip under that; raise it for
+// slower links (a branch behind satellite) rather than dropping the probe list.
+export function buildSweepArgs(subnet: string, probePorts: string): string[] {
   assertTarget(subnet)
-  const xml = await runNmap(['-sn', '-T3', '-oX', '-', subnet], timeoutMs)
+  return ['-sn', '-T4', '--max-retries', '1', '--max-rtt-timeout', '300ms', '--min-hostgroup', '256',
+    '--min-parallelism', '512', `-PS${probePorts}`, '-oX', '-', subnet]
+}
+
+// Phase 1: liveness sweep of a /24. Returns live IPs.
+export async function sweep(subnet: string, probePorts = CURATED_PORTS, timeoutMs = 60_000): Promise<string[]> {
+  const xml = await runNmap(buildSweepArgs(subnet, probePorts), timeoutMs)
   return parseNmapXml(xml).map(o => o.ip)
 }
 
@@ -150,7 +175,9 @@ export function buildServiceArgs(ips: string[], opts: ServiceScanOpts = {}): str
   // NSE: ssh-hostkey/ssl-cert = stable identity; rdp-ntlm-info/smb-os-discovery =
   // the machine gives its own name without creds. On hosts without
   // 3389/445 both are no-ops.
-  const args = ['-sT', '-sV', '-T3', '-p', opts.ports ?? CURATED_PORTS, '--script', 'ssh-hostkey,ssl-cert,rdp-ntlm-info,smb-os-discovery']
+  // -Pn: the targets are the sweep's live hosts; nmap's own 80/443 ping would drop the
+  // filtered ones the sweep just found.
+  const args = ['-sT', '-sV', '-Pn', '-T3', '-p', opts.ports ?? CURATED_PORTS, '--script', 'ssh-hostkey,ssl-cert,rdp-ntlm-info,smb-os-discovery']
   if (opts.privileged)
     args.push('-O')
   args.push('-oX', '-', ...ips)
@@ -167,6 +194,6 @@ export async function serviceScan(ips: string[], opts: ServiceScanOpts = {}): Pr
 
 // Top level: sweep → service scan of live hosts. Services see only Observation[].
 export async function scanSubnet(subnet: string, opts: ServiceScanOpts = {}): Promise<Observation[]> {
-  const live = await sweep(subnet)
+  const live = await sweep(subnet, livenessPorts(opts.ports ?? CURATED_PORTS))
   return serviceScan(live, opts)
 }

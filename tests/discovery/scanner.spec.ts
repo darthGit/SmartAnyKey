@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { assertTarget, buildServiceArgs, CURATED_PORTS, parseNmapXml } from '../../server/repositories/scanner'
+import { assertTarget, buildServiceArgs, buildSweepArgs, CURATED_PORTS, livenessPorts, parseNmapXml } from '../../server/repositories/scanner'
 
 const fx = (n: string) => readFileSync(fileURLToPath(new URL(`../fixtures/nmap/${n}`, import.meta.url)), 'utf8')
 
@@ -36,6 +36,39 @@ describe('buildServiceArgs (AC-6 argv without shell, AC-7 -O only when privilege
 
   it('invalid target in the list → throw (guard fires before nmap)', () => {
     expect(() => buildServiceArgs(['10.0.6.1', 'evil; reboot'])).toThrow()
+  })
+})
+
+// Unprivileged nmap -sn pings only TCP 80/443, so a host with ICMP and 80/443 filtered
+// looked down and was never scanned (public issue: Windows box with 135/445/3306/5900 open).
+describe('sweep: liveness by TCP connect to the curated ports', () => {
+  const list = (spec: string) => spec.split(',')
+
+  it('curated ports cover the reported host (135, 445, 3306, 5800, 5900) and stay unique', () => {
+    expect(list(CURATED_PORTS)).toEqual(expect.arrayContaining(['135', '445', '3306', '5800', '5900', '80', '443']))
+    expect(new Set(list(CURATED_PORTS)).size).toBe(list(CURATED_PORTS).length)
+  })
+
+  it('probes with -PS on the given ports, one retry, target as its own argv element', () => {
+    const args = buildSweepArgs('10.0.6.0/24', '445,3306')
+    expect(args).toContain('-sn')
+    expect(args).toContain('-PS445,3306')
+    // --max-retries 0 drops probes ("retransmission cap hit (0)") — measured: host missed
+    expect(args.slice(args.indexOf('--max-retries'), args.indexOf('--max-retries') + 2)).toEqual(['--max-retries', '1'])
+    expect(args.at(-1)).toBe('10.0.6.0/24')
+    expect(() => buildSweepArgs('10.0.6.0/24; reboot', '445')).toThrow()
+  })
+
+  it('phase 2 skips its own host discovery (-Pn): the sweep already proved the host live', () => {
+    // without -Pn nmap re-pings 80/443 and drops the same filtered host again (measured)
+    expect(buildServiceArgs(['10.0.6.1'])).toContain('-Pn')
+  })
+
+  it('liveness ports = curated, plus a short custom list; a range never widens the sweep', () => {
+    expect(livenessPorts(CURATED_PORTS)).toBe(CURATED_PORTS)
+    expect(list(livenessPorts('7000,3306'))).toEqual([...list(CURATED_PORTS), '7000'])
+    expect(livenessPorts('1-65535')).toBe(CURATED_PORTS)
+    expect(livenessPorts('22,8000-8100')).toBe(CURATED_PORTS)
   })
 })
 
