@@ -20,7 +20,20 @@ export interface NewRun {
   idempotencyKey?: string | null
 }
 
-export async function insertRunning(client: SupabaseClient, run: NewRun): Promise<{ id: string }> {
+// One running discovery scan per point is held by a partial unique index (migration 0022).
+export const ONE_RUNNING_KINDS = new Set(['discovery-scan'])
+
+/** The running run of `kind` for `refId`, if any. */
+export async function runningFor(client: SupabaseClient, kind: string, refId: string): Promise<{ id: string } | null> {
+  const { data, error } = await client.from('task_run').select('id')
+    .eq('kind', kind).eq('ref_id', refId).eq('status', 'running').maybeSingle()
+  if (error)
+    throw createError({ statusCode: 502, statusMessage: `DB: ${error.message}` })
+  return (data as { id: string }) ?? null
+}
+
+/** `existing: true` — the row was not created: a run of a one-at-a-time kind was already going. */
+export async function insertRunning(client: SupabaseClient, run: NewRun): Promise<{ id: string, existing?: true }> {
   const { data, error } = await client.from('task_run').insert({
     kind: run.kind,
     actor: run.actor,
@@ -40,6 +53,11 @@ export async function insertRunning(client: SupabaseClient, run: NewRun): Promis
       const existing = await runByIdempotencyKey(client, run.taskId ?? '', run.idempotencyKey)
       if (existing)
         return existing
+    }
+    if (error.code === '23505' && run.refId && ONE_RUNNING_KINDS.has(run.kind)) {
+      const current = await runningFor(client, run.kind, run.refId)
+      if (current)
+        return { id: current.id, existing: true }
     }
     throw createError({ statusCode: 502, statusMessage: `DB: ${error.message}` })
   }
@@ -69,7 +87,7 @@ export async function setPhase(client: SupabaseClient, id: string, phase: string
 /**
  * Log tail that grows during the run (the client sees progress via Realtime).
  * We keep only the tail: the full log goes to artifacts.
- * ponytail: read-modify-write without locking — there is one writer (this run).
+ * Kept simple: read-modify-write without locking — there is one writer (this run).
  */
 export async function appendLog(
   client: SupabaseClient,
@@ -149,8 +167,8 @@ export async function listRuns(
     .select('id,task_id,kind,actor,label,status,phase,attempt,error,result,started_at,finished_at')
     // Filter by kind, not by `task_id is not null`: deleting a definition sets
     // `task_id = null` (FK on delete set null), and runs must stay in the
-    // journal — audit outlives task deletion, the name is in the `label` snapshot
-    // (ADR-011). A task_id filter would silently hide this history.
+    // journal — audit outlives task deletion, the name is in the `label` snapshot.
+    // A task_id filter would silently hide this history.
     .eq('kind', 'task')
     // Stable sort (started_at has duplicates in a burst) — otherwise pages
     // jump, as in devices (PostgREST row cap).

@@ -152,8 +152,10 @@ const MAX_OUTPUT = 32 * 1024 * 1024
 // spawn (not execFile) so progress arrives while nmap runs. Same contract as before: argv
 // array, no shell; reject on timeout (nmap killed), non-zero exit (stderr in the message)
 // or output past MAX_OUTPUT.
-export function runNmap(args: string[], timeoutMs: number, onProgress?: OnProgress): Promise<string> {
+export function runNmap(args: string[], timeoutMs: number, onProgress?: OnProgress, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted)
+      return reject(new Error('stopped'))
     const child = spawn('nmap', args, { stdio: ['ignore', 'pipe', 'pipe'] })
     const out: Buffer[] = []
     let size = 0
@@ -165,6 +167,8 @@ export function runNmap(args: string[], timeoutMs: number, onProgress?: OnProgre
       child.kill('SIGKILL')
     }
     const timer = setTimeout(() => stop(new Error(`nmap timed out after ${timeoutMs} ms`)), timeoutMs)
+    // Stop takes the same path as the timeout: SIGKILL, settle at exit.
+    signal?.addEventListener('abort', () => stop(new Error('stopped')), { once: true })
     child.stdout.on('data', (b: Buffer) => {
       size += b.length
       if (size > MAX_OUTPUT)
@@ -208,7 +212,7 @@ export function livenessPorts(scanPorts: string): string {
 // and never reached phase 2. -PS connects to every probe port; the first answer marks it up.
 // Timing measured on a /24 with 46 ports (2026-10-22): defaults ~60 s, this ~12 s, the
 // filtered test host found 3/3. --max-retries 0 silently drops probes — keep 1.
-// ponytail: --max-rtt-timeout 300ms assumes a LAN/VPN round trip under that; raise it for
+// Kept simple: --max-rtt-timeout 300ms assumes a LAN/VPN round trip under that; raise it for
 // slower links (a branch behind satellite) rather than dropping the probe list.
 export function buildSweepArgs(subnet: string, probePorts: string): string[] {
   assertTarget(subnet)
@@ -217,8 +221,8 @@ export function buildSweepArgs(subnet: string, probePorts: string): string[] {
 }
 
 // Phase 1: liveness sweep of a /24. Returns live IPs.
-export async function sweep(subnet: string, probePorts = CURATED_PORTS, timeoutMs = 60_000, onProgress?: OnProgress): Promise<string[]> {
-  const xml = await runNmap(buildSweepArgs(subnet, probePorts), timeoutMs, onProgress)
+export async function sweep(subnet: string, probePorts = CURATED_PORTS, timeoutMs = 60_000, onProgress?: OnProgress, signal?: AbortSignal): Promise<string[]> {
+  const xml = await runNmap(buildSweepArgs(subnet, probePorts), timeoutMs, onProgress, signal)
   return parseNmapXml(xml).map(o => o.ip)
 }
 
@@ -227,6 +231,7 @@ export interface ServiceScanOpts {
   ports?: string
   timeoutMs?: number
   onProgress?: OnProgress
+  signal?: AbortSignal
 }
 
 // argv builder extracted for a unit test (no shell, target as a separate element).
@@ -248,7 +253,7 @@ export function buildServiceArgs(ips: string[], opts: ServiceScanOpts = {}): str
 export async function serviceScan(ips: string[], opts: ServiceScanOpts = {}): Promise<Observation[]> {
   if (ips.length === 0)
     return []
-  const xml = await runNmap(buildServiceArgs(ips, opts), opts.timeoutMs ?? 300_000, opts.onProgress)
+  const xml = await runNmap(buildServiceArgs(ips, opts), opts.timeoutMs ?? 300_000, opts.onProgress, opts.signal)
   return parseNmapXml(xml)
 }
 
@@ -258,7 +263,7 @@ export type ScanStage = 'sweep' | 'services'
 // onStage tags nmap's progress with which of the two invocations it belongs to.
 export async function scanSubnet(subnet: string, opts: ServiceScanOpts = {}, onStage?: (stage: ScanStage, p: ScanProgress) => void): Promise<Observation[]> {
   onStage?.('sweep', { task: '', percent: 0 })
-  const live = await sweep(subnet, livenessPorts(opts.ports ?? CURATED_PORTS), 60_000, onStage && (p => onStage('sweep', p)))
+  const live = await sweep(subnet, livenessPorts(opts.ports ?? CURATED_PORTS), 60_000, onStage && (p => onStage('sweep', p)), opts.signal)
   onStage?.('services', { task: '', percent: 0 }) // the next nmap reports only after 2 s
   return serviceScan(live, { ...opts, onProgress: onStage && (p => onStage('services', p)) })
 }

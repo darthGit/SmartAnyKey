@@ -213,6 +213,7 @@
     "customPortsPlaceholder": "e.g. 5432,6379 or 1-65535",
     "modeHint": "Which ports to probe",
     "stop": "Stop",
+    "stopped": "Scan stopped. Pick a mode and scan again when ready.",
     "scan": "Scan",
     "scanIdleHint": "Pick ports, then scan",
     "close": "Close",
