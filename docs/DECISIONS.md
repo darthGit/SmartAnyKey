@@ -27,7 +27,7 @@ new one supersedes it and the old row says so.
 | 019 | Session cookie: fixed prefix + `secure` as an installation setting | ACCEPTED |
 | 020 | Delivery = image + compose, two paths, ops through the image | ACCEPTED |
 | 021 | First-run initialisation: unauthenticated `/setup` + address from the host | ACCEPTED |
-| 022 | The public repository is an incremental export of a private monorepo | ACCEPTED |
+| 022 | The public repository is an incremental export of a private monorepo | SUPERSEDED by 025 |
 | 023 | Infrastructure composition: only the services the product uses | ACCEPTED |
 | 024 | Demo mode is a separate compose overlay, enabled by `install.sh --demo` | ACCEPTED |
 | 025 | Code is developed in this public repository directly; the export of 022 ends at the switch-over | ACCEPTED |
