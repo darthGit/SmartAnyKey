@@ -70,7 +70,7 @@ async function fetchAllDevices(): Promise<Device[]> {
   const PAGE = 1000
   const cols = 'id,point_id,type_id,label,host,actions,default_action,sort,hostname'
   const all: Device[] = []
-  // ponytail: ceiling of 50 pages (50k devices) — guards against an endless
+  // Ceiling of 50 pages (50k devices) — guards against an endless
   // loop if the server always returns exactly PAGE; raise if needed.
   for (let from = 0; from < 50 * PAGE; from += PAGE) {
     const { data, error } = await supabase
@@ -87,7 +87,7 @@ async function fetchAllDevices(): Promise<Device[]> {
 
 const { data: board, refresh } = await useAsyncData('board', async () => {
   // points (301) and device_types (5) — under the 1000 ceiling, a single query is fine.
-  // ponytail: points will also hit this ceiling at >1000 points — then wrap them
+  // Points will also hit this ceiling at >1000 points — then wrap them
   // in the same paginator (YAGNI for now).
   const [pts, types, devices] = await Promise.all([
     supabase.from('points').select('id,number,address,subnet,note,scan_cadence_minutes,next_scan_at').order('number'),
@@ -311,7 +311,7 @@ function startDrag(e: PointerEvent) {
 
 const menu = ref<{ device: Device, x: number, y: number } | null>(null)
 
-// Auto-discovery: drawer on a point (ADR-012)
+// Auto-discovery: drawer on a point
 const discoverPoint = ref<Point | null>(null)
 const discoverOpen = ref(false)
 function onDiscover(point: Point) {
@@ -343,7 +343,7 @@ async function openSession(device: Device, action?: string) {
     return
   }
   const act = resolvedAction(device, action)
-  // SSH → xterm panel (ADR-007); vnc/rdp → guac panel (ADR-010) — both are
+  // SSH → xterm panel; vnc/rdp → guac panel — both are
   // common-js ws bridges, opened directly by deviceId+action, no fetch.
   if (act === 'ssh' || act === 'vnc' || act === 'rdp') {
     // Credential pre-check before opening the panel: no resolvable binding →
@@ -469,7 +469,7 @@ async function execCommand(device: Device, command: DeviceCommand, formValues?: 
 // The client reads its own task_run row (RLS actor=self). Polling, NOT realtime
 // postgres_changes: a command often finishes (~200ms) before the realtime channel
 // connects → the update event is missed (race). Polling has no race.
-// ponytail: cap ~10min; live streaming of long commands (ws) — custom-tasks phase 2.
+// Cap ~10 min; long commands would need live streaming over ws, not built yet.
 async function pollRun(id: string) {
   for (let i = 0; i < 1000 && resultOpen.value; i++) {
     const { data } = await supabase.from('task_run')
@@ -521,6 +521,9 @@ async function signOut() {
         class="ml-auto w-36"
         @update:model-value="setLocale($event)"
       />
+      <UButton color="neutral" variant="ghost" to="/account" icon="i-lucide-shield">
+        {{ t('mfa.title') }}
+      </UButton>
       <UButton color="neutral" variant="ghost" @click="signOut">
         {{ t('board.signOut') }}
       </UButton>

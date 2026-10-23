@@ -1,13 +1,13 @@
 <script setup lang="ts">
 // Admin UI: users + roles + lifecycle. Admin-only
-// (the server returns 403 otherwise). CSR, Nuxt UI, i18n (ADR-006). Data through the BFF (service_role).
+// (the server returns 403 otherwise). CSR, Nuxt UI, i18n. Data through the BFF (service_role).
 // The temp password is shown ONLY once (dialog) — not stored.
 type Role = 'viewer' | 'operator' | 'admin'
 const { t } = useI18n()
 const session = useSupabaseSession()
 const authHeaders = computed(() => ({ Authorization: `Bearer ${session.value?.access_token}` }))
 
-interface UserRow { id: string, email: string | null, role: Role | null }
+interface UserRow { id: string, email: string | null, role: Role | null, mfa: boolean }
 const users = ref<UserRow[]>([])
 const loadErr = ref('')
 
@@ -85,8 +85,44 @@ async function del(u: UserRow) {
   catch (e) { alert(t('rbac.deleteError', { message: msg(e) })) }
 }
 
-onMounted(load)
-watch(session, (s, prev) => { if (s && !prev) load() })
+async function resetMfa(u: UserRow) {
+  if (!confirm(t('mfa.resetConfirm', { email: u.email ?? '' })))
+    return
+  try {
+    await $fetch(`/api/admin/users/${u.id}/mfa`, { method: 'DELETE', headers: authHeaders.value })
+    u.mfa = false
+  }
+  catch (e) { alert(t('mfa.resetError', { message: msg(e) })) }
+}
+
+// --- 2FA policy: the lowest role that must use a second factor ('off' = nobody) ---
+const policy = ref<Role | 'off'>('off')
+const policyNote = ref('')
+const policyItems = computed(() => [
+  { label: t('mfa.policyOff'), value: 'off' },
+  { label: t('mfa.policyViewer'), value: 'viewer' },
+  { label: t('mfa.policyOperator'), value: 'operator' },
+  { label: t('mfa.policyAdmin'), value: 'admin' },
+])
+async function loadPolicy() {
+  const { requiredRole } = await $fetch<{ requiredRole: Role | null }>('/api/admin/settings/mfa', { headers: authHeaders.value })
+  policy.value = requiredRole ?? 'off'
+}
+async function savePolicy(v: Role | 'off') {
+  policyNote.value = ''
+  try {
+    await $fetch('/api/admin/settings/mfa', {
+      method: 'PATCH', headers: authHeaders.value, body: { requiredRole: v === 'off' ? null : v },
+    })
+    policy.value = v
+    policyNote.value = t('mfa.policySaved')
+  }
+  catch (e) { policyNote.value = t('mfa.policyError', { message: msg(e) }) }
+}
+
+const loadAll = () => Promise.all([load(), loadPolicy().catch(() => {})])
+onMounted(loadAll)
+watch(session, (s, prev) => { if (s && !prev) loadAll() })
 </script>
 
 <template>
@@ -97,12 +133,23 @@ watch(session, (s, prev) => { if (s && !prev) load() })
       </UButton>
     </template>
     <p v-if="loadErr" class="text-error mb-3">{{ loadErr }}</p>
+    <div class="flex flex-wrap items-center gap-3 mb-4">
+      <span class="text-sm">{{ t('mfa.policy') }}</span>
+      <USelect
+        :model-value="policy"
+        :items="policyItems"
+        class="w-56"
+        @update:model-value="savePolicy($event as Role | 'off')"
+      />
+      <span v-if="policyNote" class="text-xs text-muted">{{ policyNote }}</span>
+    </div>
     <table class="w-full text-sm">
       <thead>
         <tr class="text-left text-muted border-b border-default">
           <th class="py-2">{{ t('rbac.email') }}</th>
           <th class="py-2 w-44">{{ t('rbac.role') }}</th>
-          <th class="py-2 w-48" />
+          <th class="py-2 w-16">{{ t('mfa.column') }}</th>
+          <th class="py-2 w-96" />
         </tr>
       </thead>
       <tbody>
@@ -118,7 +165,14 @@ watch(session, (s, prev) => { if (s && !prev) load() })
             />
           </td>
           <td class="py-2">
-            <div class="flex gap-2 justify-end">
+            <UIcon v-if="u.mfa" name="i-lucide-shield-check" class="text-success" :aria-label="t('mfa.on')" />
+            <span v-else class="text-muted">—</span>
+          </td>
+          <td class="py-2">
+            <div class="flex gap-2 justify-end whitespace-nowrap">
+              <UButton v-if="u.mfa" variant="ghost" color="neutral" size="xs" icon="i-lucide-shield-off" @click="resetMfa(u)">
+                {{ t('mfa.reset') }}
+              </UButton>
               <UButton variant="ghost" color="neutral" size="xs" icon="i-lucide-key-round" @click="resetPw(u)">
                 {{ t('rbac.reset') }}
               </UButton>

@@ -31,3 +31,4 @@ new one supersedes it and the old row says so.
 | 023 | Infrastructure composition: only the services the product uses | ACCEPTED |
 | 024 | Demo mode is a separate compose overlay, enabled by `install.sh --demo` | ACCEPTED |
 | 025 | Code is developed in this public repository directly; the export of 022 ends at the switch-over | ACCEPTED |
+| 026 | Sign-in: TOTP second factor enforced by the server; automation gets its own narrow tokens | ACCEPTED |

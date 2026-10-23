@@ -1,4 +1,4 @@
-// User-management lifecycle (amends ADR-013).
+// User-management lifecycle: create, role, password reset, delete, second-factor reset.
 // Pure functions take a service client (convention of credentials.ts/rbac.ts).
 // No email (SMTP): temp password + app_metadata.must_change_password forced change.
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -62,4 +62,18 @@ export async function changeOwnPassword(service: SupabaseClient, userId: string,
   })
   if (error)
     throw createError({ statusCode: 400, statusMessage: error.message })
+}
+
+// Admin: removes every factor of a user who lost their phone; the next sign-in is a password
+// (and enrollment again if their role is under the policy). Logged: no audit table yet.
+export async function resetMfa(service: SupabaseClient, userId: string, actor: string) {
+  const { data, error } = await service.auth.admin.mfa.listFactors({ userId })
+  if (error)
+    throw createError({ statusCode: 400, statusMessage: error.message })
+  for (const f of data.factors) {
+    const { error: delErr } = await service.auth.admin.mfa.deleteFactor({ id: f.id, userId })
+    if (delErr)
+      throw createError({ statusCode: 400, statusMessage: delErr.message })
+  }
+  console.info(`[mfa] reset by ${actor} for user ${userId}: ${data.factors.length} factor(s) removed`)
 }
