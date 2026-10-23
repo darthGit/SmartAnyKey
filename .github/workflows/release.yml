@@ -1,0 +1,99 @@
+name: release
+
+# A tag vX.Y.Z publishes images only after they were installed fresh and an install of the
+# previous release was updated to them. On a pull request that touches what ships, the
+# same tests run without publishing anything.
+on:
+  push:
+    tags: ['v*.*.*']
+  pull_request:
+    paths:
+      - docker/**
+      - Dockerfile
+      - executor/**
+      - scripts/release.mjs
+      - scripts/release-test.sh
+      - scripts/bootstrap.mjs
+      - .github/workflows/release.yml
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      registry:
+        image: registry:2
+        ports: ['5000:5000']
+    env:
+      LOCAL_APP: localhost:5000/smartanykey-app
+      LOCAL_EXECUTOR: localhost:5000/smartanykey-executor
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: tag
+        name: Pick the tag and the previous release
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then tag="$GITHUB_REF_NAME"; else tag="ci-${GITHUB_SHA::7}"; fi
+          prev=$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vx "$tag" | head -1)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "prev=$prev" >> "$GITHUB_OUTPUT"
+          echo "release $tag, upgrade from $prev"
+
+      - name: Release notes from CHANGELOG.md
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          version="${TAG#v}"
+          awk -v v="$version" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "CHANGELOG.md has no section for $version — merge it before tagging" >&2; exit 1; }
+          printf '\n**Upgrade:** `git pull && ./docker/install.sh --update` in your install folder. **New install:** `./docker/install.sh`. Images: `ghcr.io/darthgit/smartanykey-app:%s`, `ghcr.io/darthgit/smartanykey-executor:%s`.\n' "$TAG" "$TAG" >> notes.md
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build into the runner's registry
+        run: SAK_IMAGE=$LOCAL_APP SAK_EXECUTOR_IMAGE=$LOCAL_EXECUTOR node scripts/release.mjs "${{ steps.tag.outputs.tag }}"
+
+      - name: Fresh install
+        run: SAK_IMAGE=$LOCAL_APP SAK_EXECUTOR_IMAGE=$LOCAL_EXECUTOR sh scripts/release-test.sh fresh "${{ steps.tag.outputs.tag }}"
+
+      - name: Update from the previous release
+        run: SAK_IMAGE=$LOCAL_APP SAK_EXECUTOR_IMAGE=$LOCAL_EXECUTOR sh scripts/release-test.sh upgrade "${{ steps.tag.outputs.prev }}" "${{ steps.tag.outputs.tag }}"
+
+      # Everything below runs only for a version tag, and only when every test above passed:
+      # the images pushed are the ones just tested, retagged, not a rebuild.
+      - name: Publish images
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          tags="$TAG"
+          echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' && tags="$TAG latest"
+          for pair in "$LOCAL_APP ghcr.io/darthgit/smartanykey-app" "$LOCAL_EXECUTOR ghcr.io/darthgit/smartanykey-executor"; do
+            set -- $pair
+            for t in $tags; do
+              docker tag "$1:$TAG" "$2:$t"
+              docker push "$2:$t"
+            done
+          done
+
+      - name: GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          pre=""; echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' || pre="--prerelease"
+          gh release create "$TAG" --title "$TAG" --notes-file notes.md $pre

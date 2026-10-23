@@ -1,8 +1,7 @@
-// SmartAnyKey image release — CI-agnostic (tier Full without GitHub Actions).
-// The same call is made by a human, GitHub Actions, GitLab CI, Woodpecker or
-// cron: no prompts, no TTY, the exit code says it all. That is why the repo has
-// no `.github/workflows/*` — the CI provider is a property of the installation,
-// not our knowledge (deployment-specific, belongs in config).
+// SmartAnyKey image release — CI-agnostic: no prompts, no TTY, the exit code says
+// it all. `.github/workflows/release.yml` calls it to build into the runner's own
+// registry, tests the install there, and only then retags the tested images for
+// GHCR; a human or another CI can make the same call.
 //
 //   node scripts/release.mjs [tag] [--no-push] [--multi-arch]
 //
