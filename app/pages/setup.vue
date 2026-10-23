@@ -1,10 +1,11 @@
 <script setup lang="ts">
-// First-run screen (ADR-021).
+// First-run screen.
 // No authentication — on a fresh install there is nobody to authenticate.
 // Layout follows the neighbour `login.vue` (same centred UForm), so the two
 // "before sign-in" screens do not drift apart.
 //
-// Two steps, and the second one is here, not in the `admin/onboarding.vue` rail:
+// Steps: admin → authenticator (when the 2FA policy covers admins, the default — the server
+// answers the new admin nothing until it is set up) → backup. The backup step is here, not in the `admin/onboarding.vue` rail:
 // that rail leads to the first connection, and an ops step in the middle of it
 // would derail its goal. After creating the admin we sign in as them at once —
 // otherwise nobody can do the "enable backup" step: the toggle needs an admin session.
@@ -18,10 +19,8 @@ interface BackupState {
 
 const { t } = useI18n()
 const supabase = useSupabaseClient()
-const session = useSupabaseSession()
-const authHeaders = () => ({ Authorization: `Bearer ${session.value?.access_token}` })
 
-const step = ref<'admin' | 'backup'>('admin')
+const step = ref<'admin' | 'mfa' | 'backup'>('admin')
 const state = reactive({ email: '', password: '', confirm: '' })
 const error = ref('')
 const pending = ref(false)
@@ -54,8 +53,15 @@ async function createAdmin() {
     // The convention is the same `Authorization: Bearer` as in
     // `PointContactsEditor`/`FileManager`. Without it the backup step simply did not
     // appear — measured in a clean room 2026-09-18.
-    backup.value = await $fetch<BackupState>('/api/setup/backup', { headers: authHeaders() })
-    step.value = 'backup'
+    const { data: { session: s } } = await supabase.auth.getSession()
+    const { verdict } = await $fetch<{ verdict: string }>('/api/auth/mfa', {
+      headers: { Authorization: `Bearer ${s?.access_token}` },
+    })
+    if (verdict === 'mfa_enroll_required') {
+      step.value = 'mfa'
+      return
+    }
+    await showBackup()
   }
   catch (e) {
     const status = (e as { statusCode?: number }).statusCode
@@ -66,13 +72,34 @@ async function createAdmin() {
   }
 }
 
+// After enrollment the session is a new token (aal2); read it fresh rather than wait for
+// the session ref to catch up.
+async function showBackup() {
+  const { data: { session: s } } = await supabase.auth.getSession()
+  backup.value = await $fetch<BackupState>('/api/setup/backup', {
+    headers: { Authorization: `Bearer ${s?.access_token}` },
+  })
+  step.value = 'backup'
+}
+
+async function enrolled() {
+  error.value = ''
+  try {
+    await showBackup()
+  }
+  catch {
+    error.value = t('setup.failed')
+  }
+}
+
 async function enableBackup() {
   pending.value = true
   error.value = ''
   try {
+    const { data: { session: s } } = await supabase.auth.getSession()
     backup.value = await $fetch<BackupState>('/api/setup/backup', {
       method: 'POST',
-      headers: authHeaders(),
+      headers: { Authorization: `Bearer ${s?.access_token}` },
     })
   }
   catch {
@@ -123,6 +150,19 @@ async function enableBackup() {
       </UButton>
       <UAlert v-if="error" color="error" variant="subtle" :title="error" />
     </UForm>
+
+    <div
+      v-else-if="step === 'mfa'"
+      class="flex flex-col gap-3 w-96 p-8 rounded-xl shadow-lg bg-default"
+      data-testid="setup-mfa"
+    >
+      <h1 class="m-0 text-xl font-semibold text-highlighted">
+        {{ t('mfa.title') }}
+      </h1>
+      <UAlert color="warning" variant="subtle" :title="t('mfa.requiredHint')" />
+      <MfaEnroll @enrolled="enrolled" />
+      <UAlert v-if="error" color="error" variant="subtle" :title="error" />
+    </div>
 
     <div
       v-else
