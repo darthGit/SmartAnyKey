@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.1-rc.1] — 2026-10-23
+
+A pre-release that tests the new release pipeline; it changes nothing in the app.
+
+### Changed
+
+- Release images are published only after the release has been installed on a
+  clean machine and an install of the previous release has been updated to it;
+  the release notes are taken from this file.
+
 ## [0.3.0] — 2026-10-22
 
 ### Added
