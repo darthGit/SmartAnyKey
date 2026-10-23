@@ -182,6 +182,38 @@ SmartAnyKey holds the keys to every branch, so this is the part to read first.
 - **Your scripts run apart.** Scheduled tasks execute in a separate executor
   container that has no database credentials.
 
+### Running it safely
+
+- Keep it off the public internet. Reach it over your VPN or a tunnel; the
+  server can open a session to any device it knows.
+- `docker/.env` holds the key that decrypts every stored password. Make it
+  readable by root only (`chmod 600 docker/.env`) and keep a copy apart from the
+  database backups: a backup without the key restores no passwords, a backup
+  next to the key gives them all away.
+- Scheduled discovery scans are off until you set a schedule on a site. Some
+  old devices (receipt printers, scales, serial-to-Ethernet adapters) handle
+  port scans badly; scan those networks by hand first, during a quiet hour.
+- Keep another way into your sites (VPN, direct SSH). If this server is down,
+  so is every session it brokers.
+
+### Known limitations
+
+Things we know about and have not fixed yet:
+
+- The task executor is on the same Docker network as the database and `guacd`.
+  It has no database credentials, but a task script can reach those ports. Only
+  administrators can write task scripts.
+- The installer does not restrict the permissions of `docker/.env`; do it by
+  hand as above.
+- Runbooks are Markdown written by administrators and shown as HTML without
+  sanitising. The Content-Security-Policy blocks scripts, but other HTML
+  (links, forms) gets through.
+- Terminal and remote-desktop sessions pass the session token in the WebSocket
+  URL. Behind a reverse proxy that logs full URLs, the token ends up in its log
+  until it expires.
+- Decrypted passwords stay in the server's memory until garbage collection; a
+  memory dump of the app process can contain them.
+
 ### Two-factor sign-in
 
 Each user turns it on under **Sign-in security** (top right of the board): scan
