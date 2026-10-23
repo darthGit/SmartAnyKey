@@ -19,7 +19,9 @@ const ALLOWED: Record<string, string> = {
   '0021_type_actions.sql':
     'DDL: `create function apply_type_actions`. Its `update public.devices` sits in the function BODY ($$…$$) and runs only when an admin clicks "Apply to devices" — the migration itself writes no row. Same class as 0019',
   '0018_task_builtin.sql':
-    'built-in backup recipe provisioning (AC-24): the row comes from the PRODUCT, not the client, and must exist on ANY install — in prod `supabase/seeds/*.sql` never run (only migrations + seed-admin), so in seeds this row would reach nowhere. Same class as the bucket in 0015: provisioning a product object, not domain data',
+    'built-in backup recipe provisioning: the row comes from the PRODUCT, not the client, and must exist on ANY install — in prod `supabase/seeds/*.sql` never run (only migrations + seed-admin), so in seeds this row would reach nowhere. Same class as the bucket in 0015: provisioning a product object, not domain data',
+  '0023_mfa.sql':
+    'the single app_settings row (2FA policy, default admin) must exist on ANY install, where seeds never run — product provisioning, same class as 0018',
 }
 
 /** Strips `--` comments and single-quoted literals (command bodies contain SQL words). */

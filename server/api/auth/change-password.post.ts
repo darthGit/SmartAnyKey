@@ -7,7 +7,7 @@ import { changeOwnPassword } from '../../services/user-admin'
 const schema = z.object({ password: z.string().min(8) })
 
 export default defineEventHandler(async (event) => {
-  const user = await requireUser(event)
+  const user = await requireUser(event, { allowPendingMfa: true })
   assertRate(event, `pwd:${user.id}`, LIMITS.authAction)
   const { password } = await readValidatedBody(event, schema.parse)
   await changeOwnPassword(serverSupabaseServiceRole(event), user.id, password)

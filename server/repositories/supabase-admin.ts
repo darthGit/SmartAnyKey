@@ -4,6 +4,8 @@
 // directly (3-tier).
 import { createClient } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { tokenAal } from '../utils/mfa'
+import { mfaVerdict } from './mfa'
 
 let client: SupabaseClient | null = null
 
@@ -22,5 +24,8 @@ export async function getUserByToken(token: string): Promise<{ id: string, email
   if (!token)
     return null
   const { data, error } = await adminClient().auth.getUser(token)
-  return error || !data.user ? null : data.user
+  if (error || !data.user)
+    return null
+  // A session (terminal, desktop, files) is refused to a token that still owes the second factor.
+  return await mfaVerdict(adminClient(), data.user.id, tokenAal(token)) === 'ok' ? data.user : null
 }

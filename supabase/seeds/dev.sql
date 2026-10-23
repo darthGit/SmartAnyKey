@@ -64,14 +64,19 @@ where u.email = 'dev@smartanykey.local'
 
 -- ── 3. RBAC: dev user → admin (moved from 0009_rbac.sql) ────────────────────
 -- The prod admin is created DIFFERENTLY — `scripts/seed-admin.mjs` with `RBAC_ADMIN_*`
--- (ADR-013 bootstrap). That is exactly why this grant must not live in a migration: it
+-- (the unattended bootstrap). That is exactly why this grant must not live in a migration: it
 -- gave EVERY fresh deploy an admin with a publicly known password.
 insert into public.profiles (user_id, role)
 select id, 'admin' from auth.users where email = 'dev@smartanykey.local'
 on conflict (user_id) do nothing;
 
+-- Dev and the test suite sign in as this admin with a password only; the shipped default
+-- (2FA required for admins) would send every run to enrollment first. Tests of the policy
+-- set it themselves.
+update public.app_settings set mfa_required_role = null;
+
 -- ── 4. Dev commands (moved from 0005 / 0010 / 0012) ─────────────────────────
--- The client authors its own commands (ADR-014); this is a fixture for end-to-end checks.
+-- The client authors its own commands; this is a fixture for end-to-end checks.
 insert into public.device_commands (type_id, name, body, interpreter, confirm, timeout_s, sort)
 select t.id, c.name, c.body, c.interpreter, c.confirm, c.timeout_s, c.sort
 from (values
@@ -88,7 +93,7 @@ where not exists (
 );
 
 -- Tier-B probe fixture (from 0010): machine-id is stable across reboot and
--- reinstall. NOT a domain default — real probes are written by the client (ADR-014).
+-- reinstall. NOT a domain default — real probes are written by the client.
 insert into public.device_commands (type_id, name, body, interpreter, confirm, timeout_s, sort, purpose, stable)
 select t.id, 'Machine-id (fingerprint)', 'cat /etc/machine-id', 'raw', false, 10, 100, 'probe', true
 from public.device_types t
@@ -99,8 +104,8 @@ where t.slug = 'rpi-music'
   );
 
 -- ── 5. Unbound credential_set (from 0012) ───────────────────────────────────
--- Demonstrates: a set WITHOUT a binding is valid (task credentials resolve by id,
--- ADR-009 amendment 2026-07-21). `password_enc` null — the real secret is set by admin
+-- Demonstrates: a set WITHOUT a binding is valid (task credentials resolve by id).
+-- `password_enc` null — the real secret is set by admin
 -- via the UI, because encryption needs the runtime key.
 insert into public.credential_sets (name, username, password_enc, port)
 values ('Task API key (dev)', 'api', null, null)

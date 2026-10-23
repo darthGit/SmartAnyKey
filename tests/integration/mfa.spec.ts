@@ -28,9 +28,13 @@ async function makeUser(tag: string, role: 'viewer' | 'operator' | 'admin') {
   return { id: data.user.id, email }
 }
 
+// A first-factor (aal1) session, like a password sign-in, but through a magic link: the
+// password route is rate-limited per IP, and the whole suite signs in more than it allows.
 async function signIn(email: string) {
+  const { data: link, error: linkErr } = await service.auth.admin.generateLink({ type: 'magiclink', email })
+  if (linkErr) throw new Error(`generateLink ${email}: ${linkErr.message}`)
   const client = createClient(url, anonKey, { auth: { persistSession: false } })
-  const { data, error } = await client.auth.signInWithPassword({ email, password: PASSWORD })
+  const { data, error } = await client.auth.verifyOtp({ token_hash: link.properties.hashed_token, type: 'magiclink' })
   if (error) throw new Error(`signIn ${email}: ${error.message}`)
   return { client, token: data.session!.access_token }
 }
