@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.0] — 2026-10-23
 
 ### Added
 
@@ -21,6 +21,14 @@ All notable changes to this project are documented here. The format follows
 - **Administrators must use 2FA by default**, on upgraded installs too: at the
   next sign-in an admin without an authenticator is asked to set one up. To
   keep the old behaviour, set the policy to "Nobody" under **Admin → Users**.
+
+### Fixed
+
+- Discovery runs at most one scan per site, whoever starts it: a second admin
+  or the scheduled rescan joins the scan in progress instead of starting
+  another nmap.
+- Stop in the discovery drawer really stops the scan: nmap is killed, the run
+  ends as stopped, and every open drawer shows it.
 
 ## [0.3.1-rc.1] — 2026-10-23
 
