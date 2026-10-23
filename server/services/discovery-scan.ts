@@ -1,16 +1,15 @@
 // Domain service: point-scan executor. Orchestrates scanner → matcher → reconcile
-// → persist (3-Tier: nmap in the scanner repo, DB in the discovered repo). runDetached style
-// (ADR-011): the controller inserts task_run(running), calls this, returns 202; here we
+// → persist (3-Tier: nmap in the scanner repo, DB in the discovered repo). runDetached
+// style: the controller inserts task_run(running), calls this, returns 202; here we
 // execute and finalise the row. The scan writes nothing to devices — only
 // discovered_hosts (proposals); the ONLY exception is the hostname triple of an observed
-// fact (ADR-012 amendment 2026-08-11), which never
-// touches label/type_id/host.
+// fact, which never touches label/type_id/host.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { scanSubnet } from '../repositories/scanner'
-import { getAllRecentHosts, getKnownDevices, getPoint, getSignatures, listHosts, replaceHosts, updateDeviceHostname, type HostRow } from '../repositories/discovered'
+import { getAllRecentHosts, getKnownDevices, getPoint, getSignatures, listHosts, replaceHosts, updateDeviceHostname, type HostRow, type PointRow } from '../repositories/discovered'
 import { hostnameUpdates, matchType, reconcile, resolvePorts, type MatchedObs, type ScanMode } from './discovery'
 import type { Observation } from '../repositories/scanner'
-import { finish, insertRunning, setPhase } from '../repositories/task-runs'
+import { finish, insertRunning, runningFor, setPhase } from '../repositories/task-runs'
 import { bumpNextScan, duePoints, insertDriftEvents } from '../repositories/drift'
 import { diffToDriftRows } from './drift'
 import { typeActions } from './device-types'
@@ -31,7 +30,7 @@ export interface ScanOpts {
   customPorts?: string
 }
 
-export async function runScan(client: SupabaseClient, pointId: string, scanRunId: string, opts: ScanOpts = {}): Promise<ScanSummary> {
+export async function runScan(client: SupabaseClient, pointId: string, scanRunId: string, opts: ScanOpts = {}, signal?: AbortSignal): Promise<ScanSummary> {
   const point = await getPoint(client, pointId)
   if (!point)
     throw new Error('point-not-found')
@@ -42,11 +41,11 @@ export async function runScan(client: SupabaseClient, pointId: string, scanRunId
   const signatures = await getSignatures(client)
   const ports = resolvePorts(opts.mode ?? 'combined', signatures, opts.customPorts)
 
-  // ponytail: unprivileged (-sT, no -O). OS guessing is enabled by granting
+  // Kept simple: unprivileged (-sT, no -O). OS guessing is enabled by granting
   // CAP_NET_RAW + privileged:true — an env toggle, when needed.
   // Progress for the drawer/teach poll: task_run.phase = `stage|nmap task|percent` (nmap reports
   // every 2 s). A failed write must not fail the scan — progress is cosmetic.
-  const observations = await scanSubnet(point.subnet, { ports }, (stage, p) => {
+  const observations = await scanSubnet(point.subnet, { ports, signal }, (stage, p) => {
     setPhase(client, scanRunId, `${stage}|${p.task}|${Math.round(p.percent)}`).catch(() => {})
   })
   const devices = await getKnownDevices(client, pointId)
@@ -81,7 +80,7 @@ export async function runScan(client: SupabaseClient, pointId: string, scanRunId
   }
   await replaceHosts(client, pointId, rows)
   // The scan's only write to `devices` — the hostname triple of matched devices
-  // (ADR-012 amendment 2026-08-11). `label`/`type_id`/`host`
+  // (a deliberate exception). `label`/`type_id`/`host`
   // stay with the human-confirmed writers.
   for (const u of hostnameUpdates(diff, devices, new Date().toISOString()))
     await updateDeviceHostname(client, u.deviceId, u.fact)
@@ -165,17 +164,29 @@ export async function confirmDevice(client: SupabaseClient, pointId: string, inp
   return { id: deviceId }
 }
 
-// Run the scan and finalise task_run (ADR-011 seam).
-async function runAndFinish(client: SupabaseClient, runId: string, pointId: string, opts: ScanOpts = {}): Promise<void> {
+// Scans running in this process, by run id, so Stop can kill their nmap.
+// Kept simple: in-process registry — fine while there is one BFF; a second instance could not
+// stop the first one's scan (stopPointScan then closes the row, nmap runs to its timeout).
+const activeScans = new Map<string, AbortController>()
+
+type Scan = (client: SupabaseClient, pointId: string, runId: string, opts: ScanOpts, signal?: AbortSignal) => Promise<ScanSummary>
+
+// Run the scan and finalise task_run. A stopped scan ends failed/stopped.
+export async function runAndFinish(client: SupabaseClient, runId: string, pointId: string, opts: ScanOpts = {}, scan: Scan = runScan): Promise<void> {
+  const stop = new AbortController()
+  activeScans.set(runId, stop)
   try {
-    const summary = await runScan(client, pointId, runId, opts)
+    const summary = await scan(client, pointId, runId, opts, stop.signal)
     await finish(client, runId, { status: 'done', result: summary, error: null })
   }
   catch (err: unknown) {
     await finish(client, runId, {
       status: 'failed', result: null,
-      error: err instanceof Error ? err.message.slice(0, 200) : 'error',
+      error: stop.signal.aborted ? 'stopped' : err instanceof Error ? err.message.slice(0, 200) : 'error',
     }).catch(() => {})
+  }
+  finally {
+    activeScans.delete(runId)
   }
 }
 
@@ -184,10 +195,45 @@ export function runScanDetached(client: SupabaseClient, runId: string, pointId: 
   void runAndFinish(client, runId, pointId, opts)
 }
 
+/** Start a scan of the point, or return the one already running there (it is not restarted). */
+export async function startPointScan(
+  client: SupabaseClient,
+  point: PointRow,
+  actor: string,
+  opts: ScanOpts = {},
+  run: (client: SupabaseClient, runId: string, pointId: string, opts: ScanOpts) => void = runScanDetached,
+): Promise<{ executionId: string, started: boolean }> {
+  const r = await insertRunning(client, {
+    kind: 'discovery-scan',
+    actor,
+    deviceId: null,
+    refId: point.id,
+    label: `Discover #${point.number}`,
+    input: { subnet: point.subnet, mode: opts.mode ?? 'combined', customPorts: opts.customPorts ?? null },
+  })
+  if (r.existing)
+    return { executionId: r.id, started: false }
+  run(client, r.id, point.id, opts)
+  return { executionId: r.id, started: true }
+}
+
+/** Stop the point's running scan; false when nothing runs there. */
+export async function stopPointScan(client: SupabaseClient, pointId: string): Promise<boolean> {
+  const current = await runningFor(client, 'discovery-scan', pointId)
+  if (!current)
+    return false
+  const scan = activeScans.get(current.id)
+  if (scan)
+    scan.abort() // runAndFinish closes the row once nmap is gone
+  else // not ours (lost after a restart, or another instance): close the row so the point frees up
+    await finish(client, current.id, { status: 'failed', result: null, error: 'stopped' })
+  return true
+}
+
 // Scheduled tick. Select due points, dispatch SERIALLY (await each full
 // scan before the next) — genuine staggering, not a simultaneous burst. next_scan_at
 // is bumped before the run so the next tick never re-picks an in-flight point.
-// ponytail: one tick runs the whole due cohort sequentially; a huge simultaneous
+// Kept simple: one tick runs the whole due cohort sequentially; a huge simultaneous
 // cohort makes one tick long — add a per-tick cap / concurrency window if that bites.
 export async function dispatchDueScans(
   client: SupabaseClient,
@@ -201,7 +247,9 @@ export async function dispatchDueScans(
       label: `Rescan #${p.number}`, input: { subnet: p.subnet, scheduled: true },
     })
     await bumpNextScan(client, p.id, p.scan_cadence_minutes, now)
-    await runOne(client, run.id, p.id)
+    // A scan of this point is already going (manual or a previous tick): it is this cycle's scan.
+    if (!run.existing)
+      await runOne(client, run.id, p.id)
   }
   return due.length
 }

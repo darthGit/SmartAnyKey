@@ -10,7 +10,7 @@ import { assertTarget, buildServiceArgs, buildSweepArgs, CURATED_PORTS, liveness
 
 const fx = (n: string) => readFileSync(fileURLToPath(new URL(`../fixtures/nmap/${n}`, import.meta.url)), 'utf8')
 
-describe('assertTarget (AC-6 injection-guard)', () => {
+describe('assertTarget (injection guard)', () => {
   it('accepts IPv4 and IPv4/CIDR', () => {
     expect(() => assertTarget('10.0.6.0/24')).not.toThrow()
     expect(() => assertTarget('192.168.1.10')).not.toThrow()
@@ -22,7 +22,7 @@ describe('assertTarget (AC-6 injection-guard)', () => {
   })
 })
 
-describe('buildServiceArgs (AC-6 argv without shell, AC-7 -O only when privileged)', () => {
+describe('buildServiceArgs (argv without shell, -O only when privileged)', () => {
   it('target as separate argv elements, curated port set, no shell metacharacters', () => {
     const args = buildServiceArgs(['10.0.6.1', '10.0.6.6'])
     expect(args).toContain('-sT')                 // unprivileged connect scan
@@ -74,7 +74,7 @@ describe('sweep: liveness by TCP connect to the curated ports', () => {
   })
 })
 
-describe('parseNmapXml (AC-7 service/banner/cert unprivileged)', () => {
+describe('parseNmapXml (service/banner/cert, unprivileged)', () => {
   it('sweep: live hosts → IP + hostname', () => {
     const obs = parseNmapXml(fx('sweep.xml'))
     expect(obs.map(o => o.ip).sort()).toEqual(['127.0.0.1', '127.0.0.2'])
@@ -99,7 +99,7 @@ describe('parseNmapXml (AC-7 service/banner/cert unprivileged)', () => {
 
 // RED: the machine reports its own name via NSE without credentials. The fixture
 // is real nmap output (element keys come from a live run, not from memory).
-describe('NSE hostname harvest (AC-2)', () => {
+describe('NSE hostname harvest', () => {
   it('buildServiceArgs requests rdp-ntlm-info and smb-os-discovery', () => {
     const script = buildServiceArgs(['10.0.6.6'])[buildServiceArgs(['10.0.6.6']).indexOf('--script') + 1]
     expect(script.split(',')).toEqual(expect.arrayContaining(['ssh-hostkey', 'ssl-cert', 'rdp-ntlm-info', 'smb-os-discovery']))
@@ -134,7 +134,7 @@ describe('NSE hostname harvest (AC-2)', () => {
 // Scan progress: nmap --stats-every writes <taskprogress> into the same
 // XML stream; runNmap streams stdout so the run can report it while nmap is still working.
 describe('scan progress', () => {
-  it('reads task + percent from real nmap output, also across a chunk split mid-element (AC-5)', () => {
+  it('reads task + percent from real nmap output, also across a chunk split mid-element', () => {
     const xml = fx('sweep-progress.xml')
     const seen: Array<{ task: string, percent: number }> = []
     const feed = progressReader(p => seen.push(p))
@@ -149,7 +149,7 @@ describe('scan progress', () => {
     expect(svc).toContainEqual({ task: 'Service scan', percent: 33.33 })
   })
 
-  it('progress elements do not change the parsed hosts (AC-6)', () => {
+  it('progress elements do not change the parsed hosts', () => {
     const hosts = parseNmapXml(fx('service-progress.xml'))
     expect(hosts.map(h => h.ip)).toEqual(['10.42.142.1', '10.42.142.41', '10.42.142.51'])
     expect(hosts.find(h => h.ip === '10.42.142.41')?.ports.map(p => p.port)).toEqual([80, 9100])
@@ -160,7 +160,7 @@ describe('scan progress', () => {
     expect(buildServiceArgs(['10.0.6.1'])).toEqual(expect.arrayContaining(['--stats-every', '2s']))
   })
 
-  describe('runNmap against a stub nmap in PATH (AC-4)', () => {
+  describe('runNmap against a stub nmap in PATH', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sak-nmap-'))
     const stub = (body: string) => {
       writeFileSync(join(dir, 'nmap'), `#!/bin/sh\n${body}\n`)
@@ -184,6 +184,26 @@ describe('scan progress', () => {
       const pid = Number(readFileSync(join(dir, 'pid'), 'utf8'))
       await new Promise(r => setTimeout(r, 100))
       expect(() => process.kill(pid, 0)).toThrow()
+    })
+
+    it('an abort kills nmap at once and rejects as stopped', async () => {
+      stub(`echo $$ > '${dir}/pid'; sleep 30`)
+      const stop = new AbortController()
+      const run = runNmap([], 30_000, undefined, stop.signal)
+      await new Promise(r => setTimeout(r, 200))
+      stop.abort()
+      await expect(run).rejects.toThrow(/stopped/)
+      const pid = Number(readFileSync(join(dir, 'pid'), 'utf8'))
+      await new Promise(r => setTimeout(r, 100))
+      expect(() => process.kill(pid, 0)).toThrow()
+    })
+
+    it('an already aborted signal never starts nmap', async () => {
+      stub(`echo started > '${dir}/started'; sleep 30`)
+      const stop = new AbortController()
+      stop.abort()
+      await expect(runNmap([], 30_000, undefined, stop.signal)).rejects.toThrow(/stopped/)
+      expect(() => readFileSync(join(dir, 'started'))).toThrow()
     })
 
     it('a non-zero exit rejects with nmap\'s stderr', async () => {

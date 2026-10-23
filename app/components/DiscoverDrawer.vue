@@ -1,10 +1,10 @@
 <script setup lang="ts">
-// Auto-discovery diff drawer (ADR-012). Opening on a point → reattach to its running
+// Auto-discovery diff drawer. Opening on a point → reattach to its running
 // scan, else POST scan (task_run kind=discovery-scan) → poll the row (RLS actor=self, like
 // ssh-commands — NOT realtime) → GET hosts → diff New/Matched/Changed/Rogue +
 // Missing. New → confirm into a device (the single writer). Rogue is a visible flag
 // (persistent point timeline — deferred, "later").
-// ponytail: rogue is only marked in the drawer for now; a separate audit/timeline of
+// Kept simple: rogue is only marked in the drawer for now; a separate audit/timeline of
 //           the point is the next step (drift-inbox), the seam in reconcile_status exists.
 import type { DeviceType, DiscoveredHost, DiscoveryDiff, Point } from '~/types/board'
 import { fillNames } from '~/utils/nameTemplate'
@@ -51,7 +51,7 @@ async function saveSchedule() {
   }
 }
 
-const phase = ref<'idle' | 'scanning' | 'done' | 'failed'>('idle')
+const phase = ref<'idle' | 'scanning' | 'done' | 'failed' | 'stopped'>('idle')
 const errorMsg = ref('')
 const diff = ref<DiscoveryDiff | null>(null)
 
@@ -68,7 +68,7 @@ const modeItems = computed(() => [
   { label: t('discovery.modeSignatures'), value: 'signatures', disabled: !hasPortSig.value },
   { label: t('discovery.modeCustom'), value: 'custom' },
 ])
-// ponytail: the client guard checks only "non-empty" — the full format (^[\d,-]+$)
+// Kept simple: the client guard checks only "non-empty" — the full format (^[\d,-]+$)
 // is validated by the server (resolvePorts), a failure comes back as phase=failed with a message.
 const canScan = computed(() => scanMode.value !== 'custom' || customPorts.value.trim().length > 0)
 
@@ -109,8 +109,9 @@ async function pollRun(id: string, pointId: string) {
         return
       }
       if (data?.status === 'failed') {
+        // stopped by this admin, another one, or for the scheduled rescan — same state for all
         errorMsg.value = data.error ?? 'error'
-        phase.value = 'failed'
+        phase.value = data.error === 'stopped' ? 'stopped' : 'failed'
         return
       }
       await new Promise(r => setTimeout(r, 800))
@@ -154,11 +155,20 @@ async function startScan() {
   }
 }
 
-// Stop: aborts waiting for the scan → idle; the selector becomes active,
-// the admin starts again with another template via the Scan button.
-function stopScan() {
-  activeRun.value = null
-  phase.value = 'idle'
+// Stop: the server kills nmap and ends the run failed/stopped; the poll that is still
+// running shows it (here and in any other drawer on this point). 404 = it already ended,
+// and the poll shows that result instead.
+async function stopScan() {
+  const pointId = scanPointId.value
+  if (!pointId)
+    return
+  try {
+    await $fetch(`/api/discovery/${pointId}/stop`, { method: 'POST', headers: headers.value })
+  }
+  catch (e) {
+    if ((e as { statusCode?: number }).statusCode !== 404)
+      fail(e)
+  }
 }
 
 watch(() => [props.open, props.point?.id], async () => {
@@ -244,7 +254,7 @@ const bulkResult = ref('')
 
 // Bulk add of the selected hosts — removes the chore of N clicks (give a naive
 // user a bulk action). Propose-don't-write stays: a human clicks once.
-// ponytail: a sequential loop — a point has dozens of hosts; a batch endpoint if needed.
+// Kept simple: a sequential loop — a point has dozens of hosts; a batch endpoint if needed.
 async function addSelected() {
   if (!props.point)
     return
@@ -313,11 +323,11 @@ async function addSelected() {
         </UButton>
       </div>
 
-      <div v-else-if="phase === 'idle'" class="flex items-center gap-2">
+      <div v-else-if="phase === 'idle' || phase === 'stopped'" class="flex items-center gap-2">
         <UButton size="sm" color="primary" icon="i-lucide-radar" :disabled="!canScan" @click="startScan">
           {{ t('discovery.scan') }}
         </UButton>
-        <span class="text-xs text-muted">{{ t('discovery.scanIdleHint') }}</span>
+        <span class="text-xs text-muted" data-testid="scan-idle-hint">{{ phase === 'stopped' ? t('discovery.stopped') : t('discovery.scanIdleHint') }}</span>
       </div>
 
       <p v-else-if="phase === 'failed'" class="text-sm text-error">
