@@ -18,7 +18,13 @@ async function start() {
     if (f.status === 'unverified')
       await supabase.auth.mfa.unenroll({ factorId: f.id })
   }
-  const { data, error } = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'SmartAnyKey' })
+  // Without an issuer the server uses its site URL ("localhost:3000"), and the colon of the
+  // port splits the label in the authenticator app. Host without port: installs stay apart.
+  const { data, error } = await supabase.auth.mfa.enroll({
+    factorType: 'totp',
+    friendlyName: 'SmartAnyKey',
+    issuer: `SmartAnyKey (${location.hostname})`,
+  })
   if (error) {
     err.value = error.message
     return
