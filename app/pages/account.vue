@@ -7,6 +7,7 @@ const session = useSupabaseSession()
 
 const factorId = ref<string | null>(null)
 const required = ref(false)
+const loaded = ref(false)
 const enrolling = ref<{ id: string, qr: string, secret: string } | null>(null)
 const code = ref('')
 const err = ref('')
@@ -19,6 +20,7 @@ async function load() {
     headers: { Authorization: `Bearer ${session.value?.access_token}` },
   }).catch(() => null)
   required.value = !!res?.forced
+  loaded.value = true
 }
 onMounted(load)
 
@@ -73,7 +75,7 @@ async function turnOff() {
 
 <template>
   <main class="min-h-screen grid place-items-center bg-muted">
-    <div class="flex flex-col gap-4 w-96 p-8 rounded-xl shadow-lg bg-default">
+    <div v-if="loaded" class="flex flex-col gap-4 w-96 p-8 rounded-xl shadow-lg bg-default">
       <h1 class="m-0 text-xl font-semibold text-highlighted">
         {{ t('mfa.title') }}
       </h1>

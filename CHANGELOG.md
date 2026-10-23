@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Two-factor sign-in with an authenticator app (TOTP): set it up under
+  **Sign-in security**, then each sign-in asks for a 6-digit code. The server
+  enforces it for the API, remote sessions and data reads, not only the sign-in
+  form.
+- A 2FA policy under **Admin → Users**: required for everyone, operators and
+  admins, admins only, or nobody. Admins can reset a user's 2FA;
+  `scripts/reset-mfa.mjs` does it from the command line.
+
+### Changed
+
+- **Administrators must use 2FA by default**, on upgraded installs too: at the
+  next sign-in an admin without an authenticator is asked to set one up. To
+  keep the old behaviour, set the policy to "Nobody" under **Admin → Users**.
+
 ## [0.3.1-rc.1] — 2026-10-23
 
 A pre-release that tests the new release pipeline; it changes nothing in the app.

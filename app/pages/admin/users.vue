@@ -149,7 +149,7 @@ watch(session, (s, prev) => { if (s && !prev) loadAll() })
           <th class="py-2">{{ t('rbac.email') }}</th>
           <th class="py-2 w-44">{{ t('rbac.role') }}</th>
           <th class="py-2 w-16">{{ t('mfa.column') }}</th>
-          <th class="py-2 w-72" />
+          <th class="py-2 w-96" />
         </tr>
       </thead>
       <tbody>
@@ -169,7 +169,7 @@ watch(session, (s, prev) => { if (s && !prev) loadAll() })
             <span v-else class="text-muted">—</span>
           </td>
           <td class="py-2">
-            <div class="flex gap-2 justify-end">
+            <div class="flex gap-2 justify-end whitespace-nowrap">
               <UButton v-if="u.mfa" variant="ghost" color="neutral" size="xs" icon="i-lucide-shield-off" @click="resetMfa(u)">
                 {{ t('mfa.reset') }}
               </UButton>

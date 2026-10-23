@@ -9,7 +9,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { psql } from '../../scripts/lib/pg.mjs'
 import { getUserByToken } from '../../server/repositories/supabase-admin'
 import { resetMfa } from '../../server/services/user-admin'
-import { totp } from '../helpers/totp'
+import { totp } from '../helpers/totp.mjs'
 
 const url = process.env.SUPABASE_URL!
 const anonKey = process.env.SUPABASE_KEY!

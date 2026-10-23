@@ -2,7 +2,7 @@
 // the WebSocket path and the tests all answer the same way.
 import { describe, expect, it } from 'vitest'
 import { mfaGate } from '../../server/utils/mfa'
-import { hotp } from '../helpers/totp'
+import { hotp } from '../helpers/totp.mjs'
 
 describe('mfaGate', () => {
   it('a user with a verified factor must be at aal2', () => {

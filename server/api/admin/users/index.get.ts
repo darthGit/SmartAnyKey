@@ -13,11 +13,13 @@ export default defineEventHandler(async (event) => {
 
   const { data: profiles } = await sr.from('profiles').select('user_id, role')
   const roleById = new Map((profiles ?? []).map(p => [p.user_id, p.role]))
+  const { data: enrolled } = await sr.rpc('mfa_enrolled_users')
+  const withMfa = new Set((enrolled ?? []) as string[])
 
   return data.users.map(u => ({
     id: u.id,
     email: u.email,
     role: roleById.get(u.id) ?? null,
-    mfa: (u.factors ?? []).some(f => f.status === 'verified'),
+    mfa: withMfa.has(u.id),
   }))
 })

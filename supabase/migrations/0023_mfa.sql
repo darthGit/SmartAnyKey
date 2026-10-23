@@ -32,6 +32,13 @@ $$;
 revoke execute on function public.mfa_state(uuid) from public, anon, authenticated;
 grant execute on function public.mfa_state(uuid) to service_role;
 
+-- Users with a verified factor, for the admin list (the auth admin API's user list carries no factors).
+create function public.mfa_enrolled_users() returns setof uuid
+language sql stable security definer set search_path = ''
+as $$ select distinct f.user_id from auth.mfa_factors f where f.status = 'verified' $$;
+revoke execute on function public.mfa_enrolled_users() from public, anon, authenticated;
+grant execute on function public.mfa_enrolled_users() to service_role;
+
 create function public.mfa_ok() returns boolean
 language sql stable security definer set search_path = ''
 as $$

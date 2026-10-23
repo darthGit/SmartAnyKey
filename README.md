@@ -167,6 +167,10 @@ SmartAnyKey holds the keys to every branch, so this is the part to read first.
 - **Roles** — viewer, operator, admin — are checked twice: by row-level security
   in Postgres and by the API before any session opens or command runs. There is
   no self-signup; administrators create users.
+- **Two-factor sign-in** with an authenticator app (TOTP). The server enforces
+  it — the API, the remote sessions and every table the browser reads — so a
+  password alone gets nowhere once a user has set it up. Administrators must use
+  it by default; see [Two-factor sign-in](#two-factor-sign-in).
 - **Nothing on the devices.** Sessions use the protocols the devices already
   speak; no agent to install, update or trust.
 - **Small surface.** Only the app (3000) and the API gateway (8000/8443) listen on
@@ -177,6 +181,29 @@ SmartAnyKey holds the keys to every branch, so this is the part to read first.
   HSTS once you run behind TLS.
 - **Your scripts run apart.** Scheduled tasks execute in a separate executor
   container that has no database credentials.
+
+### Two-factor sign-in
+
+Each user turns it on under **Sign-in security** (top right of the board): scan
+the QR code with Google Authenticator, Aegis, 1Password or a similar app, then
+enter the 6-digit code. From then on every sign-in asks for a code.
+
+**Who must use it** is set under **Admin → Users**: everyone, operators and
+admins, admins only (the default on new and upgraded installs), or nobody. A
+user under the policy who has no authenticator yet is taken to set one up right
+after the password, and the server answers nothing else until they do. The
+change applies from the next request.
+
+**Lost phone.** An administrator presses **Reset 2FA** next to the user; the
+user signs in with the password and sets up the app again. If the last
+administrator lost theirs, run on the server:
+
+```bash
+docker compose -f docker/docker-compose.yml run --rm app node scripts/reset-mfa.mjs admin@example.com
+```
+
+Codes are time-based: keep the server clock synchronised (NTP), or valid codes
+are rejected.
 
 Found a vulnerability? Please report it privately — see [SECURITY.md](./SECURITY.md).
 
